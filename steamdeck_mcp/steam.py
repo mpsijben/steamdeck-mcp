@@ -54,7 +54,7 @@ for (const a of apps) {
     const d = await __details(a.appid);
     if (d) {
       row.compat_tool = d.strCompatToolName || "(default)";
-      row.launch_options = (a.app_type === SHORTCUT ? d.strShortcutLaunchOptions : d.strLaunchOptions) || "";
+      row.launch_options = d.strLaunchOptions || d.strShortcutLaunchOptions || "";
       if (d.lDiskUsageBytes) row.size_gb = Math.round(Number(d.lDiskUsageBytes) / 1e8) / 10;
       if (d.strInstallFolder) row.install_folder = d.strInstallFolder;
       if (a.app_type === SHORTCUT) row.exe = d.strShortcutExe;
@@ -97,7 +97,7 @@ return {
   running: SteamUIStore.RunningApps.some(r => r.appid === ID),
   compat_tool: d?.strCompatToolName || "(default)",
   compat_tool_display: d?.strCompatToolDisplayName || null,
-  launch_options: (a.app_type === SHORTCUT ? d?.strShortcutLaunchOptions : d?.strLaunchOptions) || "",
+  launch_options: d?.strLaunchOptions || d?.strShortcutLaunchOptions || "",
   exe: d?.strShortcutExe || null, start_dir: d?.strShortcutStartDir || null,
   install_folder: d?.strInstallFolder || null,
   size_gb: d?.lDiskUsageBytes ? Math.round(Number(d.lDiskUsageBytes) / 1e8) / 10 : null,
@@ -249,15 +249,23 @@ def add_shortcut(name, exe, start_dir=None, launch_options="", compat_tool=None)
     exe_path = exe.strip('"')
     if not os.path.isfile(exe_path):
         raise ValueError(f"Executable not found: {exe_path}")
-    start_dir = start_dir or os.path.dirname(exe_path)
-    appid = _js(r"""
+    start_dir = (start_dir or os.path.dirname(exe_path)).strip('"')
+    # AddShortcut's extra arguments are not applied reliably across Steam versions, so set every field
+    # explicitly afterwards, the way Steam's own properties dialog does, and read back what was stored.
+    stored = _js(r"""
 const id = await SteamClient.Apps.AddShortcut(NAME, EXE, DIR, OPTS);
-SteamClient.Apps.SetShortcutName(id, NAME);
-if (TOOL) SteamClient.Apps.SpecifyCompatTool(id, TOOL);
 for (let i = 0; i < 50 && !__ov(id); i++) await new Promise(r => setTimeout(r, 100));  // wait until listed
-return id;
-""", NAME=name, EXE=f'"{exe_path}"', DIR=f'"{start_dir}"', OPTS=launch_options or "", TOOL=compat_tool or "")
-    return {"appid": appid, "name": name, "exe": exe_path, "compat_tool": compat_tool or "(none / native)"}
+SteamClient.Apps.SetShortcutName(id, NAME);
+SteamClient.Apps.SetShortcutExe(id, '"' + EXE + '"');
+SteamClient.Apps.SetShortcutStartDir(id, '"' + DIR + '"');
+SteamClient.Apps.SetShortcutLaunchOptions(id, OPTS);
+if (TOOL) SteamClient.Apps.SpecifyCompatTool(id, TOOL);
+await new Promise(r => setTimeout(r, 500));
+const d = await __details(id);
+return {appid: id, exe: d?.strShortcutExe, start_dir: d?.strShortcutStartDir,
+        launch_options: d?.strLaunchOptions || d?.strShortcutLaunchOptions || ""};
+""", NAME=name, EXE=exe_path, DIR=start_dir, OPTS=launch_options or "", TOOL=compat_tool or "")
+    return {**stored, "name": name, "compat_tool": compat_tool or "(none / native)"}
 
 
 def remove_shortcut(game, confirm=False):
