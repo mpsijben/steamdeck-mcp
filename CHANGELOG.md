@@ -5,6 +5,8 @@
 - **Fix:** Game Mode screen-off time now sets the value on Steam's Power page (backlight dim) instead of
   Steam's screensaver setting.
 - `screen_timeouts` now also shows the Game Mode values.
+- **Fix:** in Game Mode, `set_tdp` and `set_charge_limit` also store the value in Steam's own settings.
+  Before, Steam's Performance and Power pages didn't show it and overrode it as soon as they were touched.
 - **Fix:** `add_shortcut` sets the exe, start dir and launch options explicitly.
 
 ## 1.0.0 (2026-10-11)

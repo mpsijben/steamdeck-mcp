@@ -9,7 +9,7 @@ import re
 import struct
 import subprocess
 
-from .cdp import evaluate
+from .cdp import evaluate, set_client_settings, varint
 
 KDE_PROFILES = {"ac": "AC", "battery": "Battery", "low_battery": "LowBattery"}
 
@@ -80,17 +80,6 @@ def set_kde_timeouts(screen_min=None, sleep_min=None, profiles=("ac", "battery",
     return kde_timeouts()
 
 
-def _varint(n):
-    n &= (1 << 64) - 1  # int32 negatives are encoded as 10-byte varints
-    out = bytearray()
-    while True:
-        b = n & 0x7F
-        n >>= 7
-        out.append(b | (0x80 if n else 0))
-        if not n:
-            return bytes(out)
-
-
 def steam_timeouts():
     """Game Mode idle settings as last saved by Steam in config.vdf."""
     try:
@@ -107,16 +96,12 @@ def steam_timeouts():
 
 def set_steam_timeouts(screen_min=None, sleep_min=None, sources=("ac", "battery")):
     """Write Steam's Game Mode idle settings (0 = never), the way Steam's Power settings page does."""
-    calls = []
     if screen_min is not None:
-        msg = b"".join(_varint(STEAM_DIM_FIELDS[s] << 3 | 5) + struct.pack("<f", max(0, screen_min * 60))
+        msg = b"".join(varint(STEAM_DIM_FIELDS[s] << 3 | 5) + struct.pack("<f", max(0, screen_min * 60))
                        for s in sources)
-        calls.append(f'SteamClient.System.UpdateSettings("{base64.b64encode(msg).decode()}")')
+        payload = base64.b64encode(msg).decode()
+        evaluate(f'(async () => {{ await SteamClient.System.UpdateSettings("{payload}"); return true; }})()')
     if sleep_min is not None:
-        msg = b"".join(_varint(STEAM_SUSPEND_FIELDS[s] << 3) + _varint(max(0, int(sleep_min * 60)))
-                       for s in sources)
-        calls.append(f'SteamClient.Settings.SetSetting("{base64.b64encode(msg).decode()}")')
-    if calls:
-        evaluate("(async () => { " + "".join(f"await {c}; " for c in calls) + "return true; })()")
+        set_client_settings({STEAM_SUSPEND_FIELDS[s]: max(0, int(sleep_min * 60)) for s in sources})
     return {"screen_off_min": screen_min, "sleep_min": sleep_min, "power_sources": list(sources),
             "note": "Game Mode values; 0 means never."}

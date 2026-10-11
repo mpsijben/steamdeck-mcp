@@ -4,9 +4,13 @@ import os
 import time
 
 from . import maintenance
-from .cdp import CDPError, evaluate
+from .cdp import CDPError, evaluate, set_client_settings
 
 SHORTCUT_TYPE = 1073741824
+
+# Steam client setting field numbers (CMsgClientSettings), taken from Steam's own UI code.
+TDP_LIMIT_ENABLED, TDP_LIMIT = 22001, 22002
+CHARGE_LIMIT_ENABLED, CHARGE_LIMIT = 22011, 22012
 TOOL_TYPE = 4
 
 # Waits for app details (compat tool, launch options, size) which Steam loads lazily.
@@ -518,3 +522,20 @@ return true;
     return {"appid": appid, "name": name, "status": "move still in progress",
             "percent": last["percent"] if last else 0, "location": target["path"],
             "note": "Large games take a while; call move_game again later to check (it reports 'already on ...')."}
+
+
+def sync_tdp(watts):
+    """In Game Mode Steam owns the TDP: its Performance slider re-applies its own value, so store ours there.
+    watts=None turns Steam's TDP limit off."""
+    if watts is None:
+        set_client_settings({TDP_LIMIT_ENABLED: 0})
+    else:
+        set_client_settings({TDP_LIMIT_ENABLED: 1, TDP_LIMIT: round(watts)})
+
+
+def sync_charge_limit(percent):
+    """Same for the charge limit on Steam's Power page. percent=None (or 100) turns it off."""
+    if percent is None or percent >= 100:
+        set_client_settings({CHARGE_LIMIT_ENABLED: 0})
+    else:
+        set_client_settings({CHARGE_LIMIT_ENABLED: 1, CHARGE_LIMIT: int(percent)})

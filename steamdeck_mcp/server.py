@@ -82,7 +82,7 @@ TOOLS = [
     _tool("stop_game", "Force-quit a running game (unsaved progress is lost).",
           {"game": GAME}, ["game"], destructive=True),
     _tool("set_tdp", "Set the TDP limit (3-15 W). Lower = longer battery life and cooler. Omit 'watts' to "
-          "restore the default. Uses SteamOS Manager, so Steam's own slider stays in sync.",
+          "restore the default. In Game Mode the value is also stored in Steam, so its Performance slider shows it.",
           {"watts": {"type": "number"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically)."}}),
     _tool("set_gpu_clock", "Pin the GPU clock (200-1600 MHz), or omit 'mhz' to return to automatic.",
           {"mhz": {"type": "integer"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically)."}}),
@@ -90,7 +90,8 @@ TOOLS = [
           {"fps": {"type": "integer"}}, ["fps"]),
     _tool("set_brightness", "Set screen brightness (0-100%).", {"percent": {"type": "number"}}, ["percent"]),
     _tool("set_charge_limit", "Limit battery charging to a percentage (e.g. 80) to reduce battery wear when the "
-          "Deck is often plugged in. Omit 'percent' (or use 100) to charge to 100%.",
+          "Deck is often plugged in. Omit 'percent' (or use 100) to charge to 100%. In Game Mode the value is also "
+          "stored in Steam's Power settings.",
           {"percent": {"type": "integer"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically)."}}),
     _tool("set_power_option", "Change a SteamOS power setting. Options: cpu_governor (powersave/performance), "
           "cpu_scheduler (e.g. none/lavd), cpu_boost (number), gpu_performance_level (auto/low/high/manual/"
@@ -191,6 +192,21 @@ def _power_settings():
     return settings
 
 
+def _steam_synced(apply, sync):
+    """Apply via SteamOS Manager/sysfs, then in Game Mode also store the value in Steam's own settings;
+    otherwise Steam overrides it as soon as its Performance or Power page is touched."""
+    def run(value):
+        result = apply(value)
+        if hardware.is_game_mode():
+            try:
+                sync(value)
+                result = {**result, "steam_ui": "updated"}
+            except (RuntimeError, OSError) as e:
+                result = {**result, "steam_ui": f"not updated ({e}); Steam may override this value"}
+        return result
+    return run
+
+
 def _persisting(args, key, value, apply):
     """Apply a setting; with persist=true also save it for re-applying after reboot.
     Resetting to default (value None) while persisting forgets the saved value."""
@@ -256,7 +272,7 @@ HANDLERS = {
     "set_launch_options": lambda a: steam.set_launch_options(a["game"], a["options"]),
     "launch_game": lambda a: steam.launch_game(a["game"]),
     "stop_game": lambda a: steam.stop_game(a["game"]),
-    "set_tdp": lambda a: _persisting(a, "tdp", a.get("watts"), hardware.set_tdp),
+    "set_tdp": lambda a: _persisting(a, "tdp", a.get("watts"), _steam_synced(hardware.set_tdp, steam.sync_tdp)),
     "set_gpu_clock": lambda a: _persisting(a, "gpu_clock", a.get("mhz"), hardware.set_gpu_clock),
     "set_fps_limit": lambda a: hardware.set_fps_limit(a["fps"]),
     "set_brightness": lambda a: steam.set_brightness(a["percent"]),
@@ -267,7 +283,8 @@ HANDLERS = {
     "bluetooth_devices": lambda a: system.bluetooth_devices(),
     "top_processes": lambda a: system.top_processes(a.get("count") or 10, a.get("sort") or "cpu"),
     "list_global_compat_tools": lambda a: steam.global_compat_tool(),
-    "set_charge_limit": lambda a: _persisting(a, "charge_limit", a.get("percent"), steamos_manager.set_charge_limit),
+    "set_charge_limit": lambda a: _persisting(a, "charge_limit", a.get("percent"),
+                                              _steam_synced(steamos_manager.set_charge_limit, steam.sync_charge_limit)),
     "set_power_option": lambda a: _persisting(a, f"option:{a['option']}", a["value"],
                                               lambda v: steamos_manager.set_option(a["option"], v)),
     "screen_timeouts": lambda a: {"desktop_mode": display.kde_timeouts(), "game_mode": display.steam_timeouts()},

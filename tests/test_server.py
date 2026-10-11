@@ -10,7 +10,7 @@ sys.path.insert(0, ROOT)
 
 import tempfile  # noqa: E402
 
-from steamdeck_mcp import display, maintenance, persist, server, steamos_manager  # noqa: E402
+from steamdeck_mcp import cdp, display, maintenance, persist, server, steamos_manager  # noqa: E402
 
 
 def call(name, **args):
@@ -87,15 +87,19 @@ class SafetyTests(unittest.TestCase):
         self.assertTrue(call("set_screen_timeout")["isError"])
 
 
-class DisplayTests(unittest.TestCase):
+class ProtobufTests(unittest.TestCase):
     def test_protobuf_varint(self):
-        self.assertEqual(display._varint(0), b"\x00")
-        self.assertEqual(display._varint(300), b"\xac\x02")
-        self.assertEqual(len(display._varint(-1)), 10)
+        self.assertEqual(cdp.varint(0), b"\x00")
+        self.assertEqual(cdp.varint(300), b"\xac\x02")
+        self.assertEqual(len(cdp.varint(-1)), 10)
 
     def test_steam_field_tag(self):
-        # field 24009 (screensaver AC), wire type 0 -> tag 192072
-        self.assertEqual(display._varint(24009 << 3), b"\xc8\xdc\x0b")
+        # field 24009, wire type 0 -> tag 192072
+        self.assertEqual(cdp.varint(24009 << 3), b"\xc8\xdc\x0b")
+
+    def test_backlight_dim_tag(self):
+        # idle_backlight_dim_ac_seconds: field 2, wire type 5 (float)
+        self.assertEqual(cdp.varint(display.STEAM_DIM_FIELDS["ac"] << 3 | 5), b"\x15")
 
 
 class PersistTests(unittest.TestCase):

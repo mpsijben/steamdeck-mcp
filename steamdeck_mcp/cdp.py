@@ -147,3 +147,22 @@ def enable_integration():
         status["next_step"] = "Restart Steam (or reboot / switch Game Mode <-> Desktop Mode) to activate it."
     status["created"] = created
     return status
+
+
+def varint(n):
+    n &= (1 << 64) - 1  # int32 negatives are encoded as 10-byte varints
+    out = bytearray()
+    while True:
+        b = n & 0x7F
+        n >>= 7
+        out.append(b | (0x80 if n else 0))
+        if not n:
+            return bytes(out)
+
+
+def set_client_settings(fields):
+    """Write Steam client settings (CMsgClientSettings) the way Steam's own settings pages do.
+    fields: {field_number: int}; booleans are written as 0/1."""
+    msg = b"".join(varint(n << 3) + varint(int(v)) for n, v in fields.items())
+    payload = base64.b64encode(msg).decode()
+    evaluate(f'(async () => {{ await SteamClient.Settings.SetSetting("{payload}"); return true; }})()')
