@@ -20,8 +20,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/OWNER/steamdeck-mcp"
-Issues = "https://github.com/OWNER/steamdeck-mcp/issues"
+Homepage = "https://github.com/mpsijben/steamdeck-mcp"
+Issues = "https://github.com/mpsijben/steamdeck-mcp/issues"
 
 [project.scripts]
 steamdeck-mcp = "steamdeck_mcp.server:main"

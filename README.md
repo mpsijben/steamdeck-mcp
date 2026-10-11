@@ -43,7 +43,7 @@ Hardware, battery, audio, network and file tools work without the Steam integrat
 Run these in **Desktop Mode** (Konsole), on the Deck itself:
 
 ```bash
-git clone https://github.com/OWNER/steamdeck-mcp.git ~/steamdeck-mcp
+git clone https://github.com/mpsijben/steamdeck-mcp.git ~/steamdeck-mcp
 ```
 
 That's it, there is nothing to build or install. Then:
@@ -255,7 +255,7 @@ adapts to whatever your SteamOS version offers. Hardware, file and system tools 
 | Power tools say SteamOS Manager is unavailable | Very old SteamOS; TDP/GPU fall back to `steamos-priv-write`, other power options need SteamOS 3.6+ |
 | `set_fps_limit` fails | Only works in Game Mode |
 | `move_game` fails with error 19 | Steam queued a file check after the previous move; let downloads run until it finishes |
-| A tool broke after a Steam update | Please [open an issue](https://github.com/OWNER/steamdeck-mcp/issues) with the error text |
+| A tool broke after a Steam update | Please [open an issue](https://github.com/mpsijben/steamdeck-mcp/issues) with the error text |
 
 Run the server by hand to see errors: `python3 scripts/smoke_test.py` calls every read-only tool and reports
 which ones fail.
