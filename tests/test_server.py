@@ -10,7 +10,7 @@ sys.path.insert(0, ROOT)
 
 import tempfile  # noqa: E402
 
-from steamdeck_mcp import maintenance, persist, server, steamos_manager  # noqa: E402
+from steamdeck_mcp import display, maintenance, persist, server, steamos_manager  # noqa: E402
 
 
 def call(name, **args):
@@ -82,6 +82,20 @@ class SafetyTests(unittest.TestCase):
     def test_manager_ranges_validated(self):
         self.assertTrue(call("set_charge_limit", percent=5)["isError"])
         self.assertTrue(call("set_power_option", option="fan_control", value="turbo")["isError"])
+
+    def test_screen_timeout_needs_a_value(self):
+        self.assertTrue(call("set_screen_timeout")["isError"])
+
+
+class DisplayTests(unittest.TestCase):
+    def test_protobuf_varint(self):
+        self.assertEqual(display._varint(0), b"\x00")
+        self.assertEqual(display._varint(300), b"\xac\x02")
+        self.assertEqual(len(display._varint(-1)), 10)
+
+    def test_steam_field_tag(self):
+        # field 24009 (screensaver AC), wire type 0 -> tag 192072
+        self.assertEqual(display._varint(24009 << 3), b"\xc8\xdc\x0b")
 
 
 class PersistTests(unittest.TestCase):

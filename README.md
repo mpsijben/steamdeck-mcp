@@ -128,7 +128,7 @@ MCP over stdio works through SSH, so an AI client on your PC can manage the Deck
 
 ## Tools
 
-51 tools. Games can be referred to by appid or by (part of) their name, e.g. `"hades"`.
+53 tools. Games can be referred to by appid or by (part of) their name, e.g. `"hades"`.
 ✏️ = changes something · ⚠️ = destructive, needs `confirm=true` or is clearly marked.
 
 ### Status
@@ -176,6 +176,7 @@ MCP over stdio works through SSH, so an AI client on your PC can manage the Deck
 | `set_power_option` ✏️ | CPU governor, CPU scheduler (e.g. `lavd`), CPU boost, GPU performance level/profile, fan control, Wi-Fi power saving, HDMI-CEC (options depend on SteamOS version) |
 | `set_fps_limit` ✏️ | Frame limit via gamescope (experimental, Game Mode only) |
 | `set_brightness` ✏️ · `set_volume` ✏️ | Screen brightness, volume and mute |
+| `screen_timeouts` · `set_screen_timeout` ✏️ | When the screen turns off / the Deck sleeps when idle, for Desktop Mode (KDE) and Game Mode (Steam), on battery and charger |
 | `persistent_settings` · `forget_persistent_settings` ✏️ | See [Settings that survive a reboot](#settings-that-survive-a-reboot) |
 
 ### System & connectivity
@@ -207,7 +208,8 @@ boot. It is installed automatically the first time you persist something, remove
 and lives in your home directory, so SteamOS updates don't remove it. `persistent_settings` shows what's saved;
 `forget_persistent_settings` stops it.
 
-Per-game things such as Proton versions and launch options are stored by Steam itself and always persist.
+Per-game things such as Proton versions and launch options, and screen/sleep timeouts, are stored by Steam or
+KDE themselves and always persist.
 
 ## Safety
 
@@ -234,6 +236,7 @@ uses the same port. Only enable it if you're comfortable with that.
 | Games, installs, Proton, launch options, downloads, shortcuts, power, airplane mode, brightness | Steam's internal `SteamClient` JavaScript API, via its local debugging port |
 | TDP/GPU on older SteamOS | `steamos-priv-write` (polkit-allowed helper, no password) |
 | Audio, Wi-Fi, Bluetooth, processes, Game/Desktop switch | `pactl`, `nmcli`, `bluetoothctl`, `ps`, `steamos-session-select` |
+| Screen/sleep timeouts | KDE `powerdevilrc` (Desktop Mode) and Steam's client settings (Game Mode) |
 | Sensors, battery, disks | `/sys`, `/proc` (read-only) |
 | FPS limit | gamescope's `GAMESCOPE_FPS_LIMIT` property |
 | GE-Proton, cleanup, logs | Files under `~/.local/share/Steam` and your Steam libraries |
@@ -277,6 +280,7 @@ The code is plain standard-library Python:
 | `steamdeck_mcp/system.py` | Audio, network, Bluetooth, processes, session switching |
 | `steamdeck_mcp/maintenance.py` | Libraries, Proton installs, cleanup, logs |
 | `steamdeck_mcp/persist.py` | Settings re-applied after reboot |
+| `steamdeck_mcp/display.py` | Screen-off and sleep timeouts |
 
 Contributions are welcome. When adding a tool that changes something, test it on a real Deck with values that
 don't change the current state where possible, and add a guard (`confirm=true`) for anything destructive.

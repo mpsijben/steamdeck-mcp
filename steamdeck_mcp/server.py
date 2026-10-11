@@ -3,7 +3,7 @@ import json
 import sys
 import traceback
 
-from . import __version__, cdp, hardware, maintenance, persist, steam, steamos_manager, system
+from . import __version__, cdp, display, hardware, maintenance, persist, steam, steamos_manager, system
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 
@@ -100,6 +100,14 @@ TOOLS = [
           "See power_settings for the values this Deck supports.",
           {"option": {"enum": list(steamos_manager.OPTIONS)}, "value": {"type": "string"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically)."}},
           ["option", "value"]),
+    _tool("screen_timeouts", "When the screen turns off and the Deck goes to sleep when idle, in Desktop Mode "
+          "(KDE) per power source.", read_only=True),
+    _tool("set_screen_timeout", "Set after how many idle minutes the screen turns off and/or the Deck sleeps. "
+          "0 = never. Applies to Desktop Mode (KDE), Game Mode (Steam, needs Steam running) or both, on battery, "
+          "charger or both. Settings are saved by KDE/Steam and survive reboots.",
+          {"screen_minutes": {"type": "number"}, "sleep_minutes": {"type": "number"},
+           "mode": {"enum": ["both", "desktop", "game"], "description": "Default both."},
+           "power_source": {"enum": ["both", "battery", "ac"], "description": "Default both."}}),
     _tool("persistent_settings", "Settings saved with persist=true, which are re-applied after every reboot, and "
           "whether the restore timer is active.", read_only=True),
     _tool("forget_persistent_settings", "Stop re-applying saved settings after reboot. Pass setting keys from "
@@ -195,6 +203,30 @@ def _persisting(args, key, value, apply):
     return result
 
 
+def _set_screen_timeout(screen, sleep, mode, source):
+    if screen is None and sleep is None:
+        raise ValueError("Pass screen_minutes and/or sleep_minutes (0 = never).")
+    sources = ("ac", "battery") if source == "both" else (source,)
+    result, warnings = {}, []
+    if mode in ("both", "desktop"):
+        profiles = sources + (("low_battery",) if "battery" in sources else ())
+        result["desktop_mode"] = display.set_kde_timeouts(screen, sleep, profiles)
+        if screen:
+            for name in profiles:
+                s = result["desktop_mode"][name]["sleep_min"]
+                if isinstance(s, (int, float)) and s < screen:
+                    warnings.append(f"Desktop Mode ({name}): the Deck sleeps after {s} min, before the screen "
+                                    f"timeout of {screen} min; raise sleep_minutes too.")
+    if mode in ("both", "game"):
+        try:
+            result["game_mode"] = display.set_steam_timeouts(screen, sleep, sources)
+        except RuntimeError as e:  # Steam not running: still report the Desktop Mode part
+            result["game_mode"] = f"not changed: {e}"
+    if warnings:
+        result["warnings"] = warnings
+    return result
+
+
 def _remove_proton(name):
     # config.vdf is only flushed when Steam exits, so also check Steam's live settings.
     try:
@@ -238,6 +270,9 @@ HANDLERS = {
     "set_charge_limit": lambda a: _persisting(a, "charge_limit", a.get("percent"), steamos_manager.set_charge_limit),
     "set_power_option": lambda a: _persisting(a, f"option:{a['option']}", a["value"],
                                               lambda v: steamos_manager.set_option(a["option"], v)),
+    "screen_timeouts": lambda a: {"desktop_mode": display.kde_timeouts()},
+    "set_screen_timeout": lambda a: _set_screen_timeout(a.get("screen_minutes"), a.get("sleep_minutes"),
+                                                        a.get("mode") or "both", a.get("power_source") or "both"),
     "persistent_settings": lambda a: persist.status(),
     "forget_persistent_settings": lambda a: persist.forget(a["keys"]),
     "set_volume": lambda a: system.set_volume(a.get("percent"), a.get("muted")),
