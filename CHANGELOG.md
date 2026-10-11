@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Fix:** Game Mode screen-off time now sets the value on Steam's Power page (backlight dim) instead of
+  Steam's screensaver setting.
+- `screen_timeouts` now also shows the Game Mode values.
+- **Fix:** `add_shortcut` sets the exe, start dir and launch options explicitly.
+
 ## 1.0.0 (2026-10-11)
 
 First public release. 53 tools:

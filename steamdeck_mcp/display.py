@@ -5,19 +5,24 @@ Both are stored by KDE/Steam themselves, so they survive reboots without help.
 """
 import base64
 import os
+import re
+import struct
 import subprocess
 
 from .cdp import evaluate
 
 KDE_PROFILES = {"ac": "AC", "battery": "Battery", "low_battery": "LowBattery"}
 
-# Steam client setting field numbers (CMsgClientSettings), taken from Steam's own UI code.
-STEAM_FIELDS = {
-    ("screen", "battery"): 24008,  # system_idle_screensaver_battery_sec
-    ("screen", "ac"): 24009,       # system_idle_screensaver_ac_sec
-    ("sleep", "battery"): 24003,   # system_idle_suspend_battery_sec
-    ("sleep", "ac"): 24004,        # system_idle_suspend_ac_sec
-}
+STEAM_CONFIG = os.path.expanduser("~/.local/share/Steam/config/config.vdf")
+
+# Field numbers taken from Steam's own UI code. The screen-off time on Steam's Power page is the backlight
+# dim setting (CMsgSystemSettings, float seconds); sleep is a client setting (CMsgClientSettings, int32 seconds).
+STEAM_DIM_FIELDS = {"battery": 1, "ac": 2}       # idle_backlight_dim_{battery,ac}_seconds
+STEAM_SUSPEND_FIELDS = {"battery": 24003, "ac": 24004}  # system_idle_suspend_{battery,ac}_sec
+STEAM_CONFIG_KEYS = {("screen", "battery"): "IdleBacklightDimBatterySeconds",
+                     ("screen", "ac"): "IdleBacklightDimACSeconds",
+                     ("sleep", "battery"): "IdleSuspendBatterySeconds",
+                     ("sleep", "ac"): "IdleSuspendACSeconds"}
 
 
 def _kread(file, groups, key):
@@ -86,16 +91,32 @@ def _varint(n):
             return bytes(out)
 
 
+def steam_timeouts():
+    """Game Mode idle settings as last saved by Steam in config.vdf."""
+    try:
+        txt = open(STEAM_CONFIG, errors="replace").read()
+    except OSError:
+        return "unknown: Steam's config.vdf not found"
+    out = {}
+    for (kind, source), key in STEAM_CONFIG_KEYS.items():
+        m = re.search(rf'"{key}"\s+"([\d.]+)"', txt)
+        out.setdefault(source, {})[f"{'screen_off' if kind == 'screen' else 'sleep'}_min"] = (
+            _minutes(float(m.group(1))) if m else "default")
+    return out
+
+
 def set_steam_timeouts(screen_min=None, sleep_min=None, sources=("ac", "battery")):
-    """Write Steam's Game Mode idle settings (0 = never), the way Steam's settings page does."""
-    msg = b""
-    for kind, minutes in (("screen", screen_min), ("sleep", sleep_min)):
-        if minutes is None:
-            continue
-        for source in sources:
-            msg += _varint(STEAM_FIELDS[(kind, source)] << 3) + _varint(max(0, int(minutes * 60)))
-    if msg:
-        payload = base64.b64encode(msg).decode()
-        evaluate(f'(async () => {{ await SteamClient.Settings.SetSetting("{payload}"); return true; }})()')
+    """Write Steam's Game Mode idle settings (0 = never), the way Steam's Power settings page does."""
+    calls = []
+    if screen_min is not None:
+        msg = b"".join(_varint(STEAM_DIM_FIELDS[s] << 3 | 5) + struct.pack("<f", max(0, screen_min * 60))
+                       for s in sources)
+        calls.append(f'SteamClient.System.UpdateSettings("{base64.b64encode(msg).decode()}")')
+    if sleep_min is not None:
+        msg = b"".join(_varint(STEAM_SUSPEND_FIELDS[s] << 3) + _varint(max(0, int(sleep_min * 60)))
+                       for s in sources)
+        calls.append(f'SteamClient.Settings.SetSetting("{base64.b64encode(msg).decode()}")')
+    if calls:
+        evaluate("(async () => { " + "".join(f"await {c}; " for c in calls) + "return true; })()")
     return {"screen_off_min": screen_min, "sleep_min": sleep_min, "power_sources": list(sources),
             "note": "Game Mode values; 0 means never."}

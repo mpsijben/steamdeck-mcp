@@ -101,7 +101,7 @@ TOOLS = [
           {"option": {"enum": list(steamos_manager.OPTIONS)}, "value": {"type": "string"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically)."}},
           ["option", "value"]),
     _tool("screen_timeouts", "When the screen turns off and the Deck goes to sleep when idle, in Desktop Mode "
-          "(KDE) per power source.", read_only=True),
+          "(KDE) and Game Mode (Steam) per power source.", read_only=True),
     _tool("set_screen_timeout", "Set after how many idle minutes the screen turns off and/or the Deck sleeps. "
           "0 = never. Applies to Desktop Mode (KDE), Game Mode (Steam, needs Steam running) or both, on battery, "
           "charger or both. Settings are saved by KDE/Steam and survive reboots.",
@@ -270,7 +270,7 @@ HANDLERS = {
     "set_charge_limit": lambda a: _persisting(a, "charge_limit", a.get("percent"), steamos_manager.set_charge_limit),
     "set_power_option": lambda a: _persisting(a, f"option:{a['option']}", a["value"],
                                               lambda v: steamos_manager.set_option(a["option"], v)),
-    "screen_timeouts": lambda a: {"desktop_mode": display.kde_timeouts()},
+    "screen_timeouts": lambda a: {"desktop_mode": display.kde_timeouts(), "game_mode": display.steam_timeouts()},
     "set_screen_timeout": lambda a: _set_screen_timeout(a.get("screen_minutes"), a.get("sleep_minutes"),
                                                         a.get("mode") or "both", a.get("power_source") or "both"),
     "persistent_settings": lambda a: persist.status(),
