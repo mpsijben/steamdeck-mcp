@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0 (2026-10-12)
 
 - **New:** optimize-game method, as the MCP prompt `optimize_game` and as a Claude Code skill
   (`skills/optimize-game`): set a target FPS, lower the TDP step by step while measuring, report before/after with
