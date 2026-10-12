@@ -4,7 +4,7 @@ import os
 import sys
 import traceback
 
-from . import __version__, cdp, display, fps, hardware, maintenance, persist, screen, steam, steamos_manager, system
+from . import __version__, cdp, display, fps, gamepad, hardware, maintenance, persist, screen, steam, steamos_manager, system
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 
@@ -119,6 +119,13 @@ TOOLS = [
           "take a screenshot first and make sure the right window is in front.",
           {"keys": {"type": "string"}, "repeat": {"type": "integer", "description": "Press the sequence N times (default 1, max 20)."}},
           ["keys"], level="full"),
+    _tool("press_button", "Full access only. Press controller buttons through a virtual Xbox controller, for "
+          "games or menus that need a gamepad: a, b, x, y, lb, rb, lt, rt, menu (start), view (select), guide, ls, rs, "
+          "up/down/left/right (d-pad). Space-separated buttons are pressed one after another, or together with "
+          "together=true. The first press connects the controller (games see a second controller).",
+          {"buttons": {"type": "string"}, "together": {"type": "boolean", "description": "Press all at once (default false)."},
+           "hold_ms": {"type": "integer", "description": "How long each press lasts (default 120)."}},
+          ["buttons"], level="full"),
     _tool("type_text", "Full access only. Type text into the window in front (max 500 characters). Real input.",
           {"text": {"type": "string"}}, ["text"], level="full"),
     _tool("click", "Full access only. Click at x/y in screenshot coordinates (1280x800) in the window in front. "
@@ -329,6 +336,7 @@ HANDLERS = {
     "measure_fps": lambda a: _measure_fps(a.get("seconds", 20), a.get("game"), a.get("wait_seconds", 60)),
     "screenshot": lambda a: screen.screenshot(),
     "press_key": lambda a: screen.press_key(a["keys"], a.get("repeat", 1)),
+    "press_button": lambda a: gamepad.press(a["buttons"], a.get("hold_ms", 120), a.get("together", False)),
     "type_text": lambda a: screen.type_text(a["text"]),
     "click": lambda a: screen.click(a["x"], a["y"], a.get("button", "left"), a.get("double", False)),
     "set_game_profile": lambda a: steam.set_game_profile(a["game"], a.get("enabled", True), a.get("wait_seconds", 60)),

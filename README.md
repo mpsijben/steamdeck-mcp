@@ -138,7 +138,7 @@ Pick a level when you register the server by adding a flag to the command (or se
 |---|---|---|
 | Read-only | `--readonly` | Look only: status, games, logs, performance, FPS measurements, screenshots |
 | Standard | *(none)* | Also change settings: TDP, FPS limit, Proton, installs, downloads, power, … |
-| Full | `--full` | Also **keyboard and mouse input** in Game Mode (`press_key`, `type_text`, `click`), e.g. to change a game's own graphics settings |
+| Full | `--full` | Also **keyboard, mouse and controller input** in Game Mode (`press_key`, `type_text`, `click`, `press_button`), e.g. to change a game's own graphics settings |
 
 ```bash
 claude mcp add steamdeck-mcp -s user -- python3 -I /home/deck/steamdeck-mcp/server.py --full
@@ -152,7 +152,7 @@ whatever is in front, so only choose `--full` if you're happy for your assistant
 
 ## Tools
 
-60 tools. Games can be referred to by appid or by (part of) their name, e.g. `"hades"`.
+61 tools. Games can be referred to by appid or by (part of) their name, e.g. `"hades"`.
 ✏️ = changes something · ⚠️ = destructive, needs `confirm=true` or is clearly marked · 🖐️ = keyboard/mouse input,
 only with `--full`.
 
@@ -212,6 +212,7 @@ only with `--full`.
 | `set_fps_limit` ✏️ · `set_game_profile` ✏️ | Steam's framerate limit, and per-game performance profiles on/off |
 | `screenshot` | What's on screen as an image, e.g. to read a game's settings menu |
 | `press_key` 🖐️ · `type_text` 🖐️ · `click` 🖐️ | Keyboard and mouse input in the window in front |
+| `press_button` 🖐️ | Controller buttons (A/B/X/Y, bumpers, triggers, d-pad, Menu/View) through a virtual Xbox controller, for games and menus that need a gamepad |
 
 Steam applies performance settings to the game that was last in front. When the assistant runs on the Deck
 itself, pass `game` and switch to the game within a minute; the tool waits for it. With
@@ -285,6 +286,7 @@ uses the same port. Only enable it if you're comfortable with that.
 | FPS measurement | Steam's performance overlay (mangoapp) logs frames to a temporary folder for the measurement; its config file is restored afterwards |
 | Screenshots | `gamescopectl screenshot` (the same capture as the screenshot button) |
 | Keyboard/mouse input | `xdotool` on the Xwayland display of the window gamescope shows in front |
+| Controller buttons | A virtual Xbox 360 controller via Linux `uinput` (SteamOS gives the desktop user access), kept until the server exits |
 | GE-Proton, cleanup, logs | Files under `~/.local/share/Steam` and your Steam libraries |
 
 **A note on stability:** `SteamClient` is Steam's internal, undocumented API (the same one Decky Loader plugins
@@ -327,6 +329,7 @@ The code is plain standard-library Python:
 | `steamdeck_mcp/hardware.py` | Sensors, battery, TDP/GPU |
 | `steamdeck_mcp/fps.py` | FPS measurement via the performance overlay's logger |
 | `steamdeck_mcp/screen.py` | Screenshots and keyboard/mouse input |
+| `steamdeck_mcp/gamepad.py` | Virtual controller for button presses |
 | `steamdeck_mcp/system.py` | Audio, network, Bluetooth, processes, session switching |
 | `steamdeck_mcp/maintenance.py` | Libraries, Proton installs, cleanup, logs |
 | `steamdeck_mcp/persist.py` | Settings re-applied after reboot |

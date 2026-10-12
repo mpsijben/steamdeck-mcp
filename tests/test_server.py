@@ -10,7 +10,7 @@ sys.path.insert(0, ROOT)
 
 import tempfile  # noqa: E402
 
-from steamdeck_mcp import cdp, display, fps, maintenance, screen, persist, server, steamos_manager  # noqa: E402
+from steamdeck_mcp import cdp, display, fps, gamepad, maintenance, screen, persist, server, steamos_manager  # noqa: E402
 
 
 def call(name, **args):
@@ -148,8 +148,9 @@ class AccessLevelTests(unittest.TestCase):
         self.assertTrue(call("set_tdp", watts=10)["isError"])
 
     def test_input_tools_only_at_full(self):
-        self.assertFalse({"press_key", "type_text", "click"} & self.names("standard"))
-        self.assertTrue({"press_key", "type_text", "click"} <= self.names("full"))
+        inputs = {"press_key", "press_button", "type_text", "click"}
+        self.assertFalse(inputs & self.names("standard"))
+        self.assertTrue(inputs <= self.names("full"))
         server.LEVEL = "standard"
         self.assertIn("access level", call("click", x=1, y=1)["content"][0]["text"])
 
@@ -175,6 +176,19 @@ class InputValidationTests(unittest.TestCase):
             screen.click(1280, 10)
         with self.assertRaises(ValueError):
             screen.click(10, 10, button="side")
+
+    def test_controller_buttons_validated(self):
+        self.assertEqual(gamepad._normalize("A, start up"), ["a", "menu", "up"])
+        with self.assertRaises(ValueError):
+            gamepad._normalize("a jump")
+        with self.assertRaises(ValueError):
+            gamepad._normalize("")
+
+    def test_uinput_structs_match_kernel_sizes(self):
+        import struct
+        self.assertEqual(struct.calcsize("llHHi"), 24)      # struct input_event (64-bit)
+        self.assertEqual(struct.calcsize("HH6i"), 28)       # struct uinput_abs_setup
+        self.assertEqual(struct.calcsize("4H80sI"), 92)     # struct uinput_setup
 
     def test_empty_or_long_input_rejected(self):
         with self.assertRaises(ValueError):

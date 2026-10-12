@@ -2,7 +2,7 @@
 
 ## 1.2.0 (2026-10-12)
 
-Lets an assistant look at and operate a game, so it can tune settings and check the result. 60 tools.
+Lets an assistant look at and operate a game, so it can tune settings and check the result. 61 tools.
 
 - **New: access levels.** `--readonly` (look only), standard (default, as before) and `--full` (adds keyboard and
   mouse input). Also settable with `STEAMDECK_MCP_LEVEL`. Tools above the chosen level are not offered at all.
@@ -11,6 +11,8 @@ Lets an assistant look at and operate a game, so it can tune settings and check 
 - **New:** `screenshot` returns what's on screen as an image (Game Mode, via gamescope).
 - **New (full access):** `press_key`, `type_text` and `click` send keyboard and mouse input to the window in front.
   Clicks use screenshot coordinates and are scaled to the game's own resolution.
+- **New (full access):** `press_button` presses controller buttons through a virtual Xbox controller (uinput),
+  for games and menus that only react to a gamepad.
 - The server now reports itself as `steamdeck-mcp`.
 
 ## 1.1.1 (2026-10-12)
