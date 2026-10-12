@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.1 (2026-10-12)
 
 - **Fix:** `set_fps_limit` and `set_game_profile` failed after a reboot until Steam's Performance menu had been
   opened once (they used a Steam UI object that only exists from then on). They now read Steam's performance
