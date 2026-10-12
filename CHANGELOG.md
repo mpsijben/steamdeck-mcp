@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **New: Steam Game Recording.** `recording_status`, `set_recording` (off / background / manual, how long to keep,
+  quality), `save_clip` (the last N seconds, like the clip button), `export_clip` (MP4, default `~/Videos`) and
+  `delete_clip`. Background recording uses about 3.5 GB per hour at standard quality. 66 tools.
+- Client settings can now also be written as text and decimal values.
+
 ## 1.3.0 (2026-10-12)
 
 - **New:** optimize-game method, as the MCP prompt `optimize_game` and as a Claude Code skill

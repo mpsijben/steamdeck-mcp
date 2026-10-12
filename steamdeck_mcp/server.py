@@ -4,7 +4,7 @@ import os
 import sys
 import traceback
 
-from . import __version__, cdp, display, fps, gamepad, hardware, maintenance, persist, screen, steam, steamos_manager, system
+from . import __version__, cdp, display, fps, gamepad, hardware, recording, maintenance, persist, screen, steam, steamos_manager, system
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 
@@ -114,6 +114,22 @@ TOOLS = [
           "Use it before and after changing settings to compare.",
           {"seconds": {"type": "integer", "description": "5-120, default 20."}, "game": GAME, "wait_seconds": WAIT},
           read_only=True),
+    _tool("recording_status", "Steam Game Recording: mode (off/background/manual), how much background video is "
+          "kept, quality, what is being recorded now, storage used and the latest clips.", read_only=True),
+    _tool("set_recording", "Change Steam Game Recording. mode: off, background (always records the game you play, "
+          "so you can clip moments afterwards; about 3.5 GB per hour at standard quality, older video is dropped) "
+          "or manual. keep_minutes: how much background video to keep (10-1440). quality: low, medium, standard, "
+          "high. If background recording doesn't start, restart Steam once.",
+          {"mode": {"enum": list(recording.MODES)}, "keep_minutes": {"type": "integer"},
+           "quality": {"enum": list(recording.QUALITIES)}}),
+    _tool("save_clip", "Save the last N seconds (default 30) of the background recording as a Steam clip, like the "
+          "clip button. Needs background recording on and a game running.",
+          {"seconds": {"type": "integer", "description": "5-600, default 30."}, "name": {"type": "string"}}),
+    _tool("export_clip", "Export a clip (see recording_status) as an MP4 file, by default into Steam's export folder "
+          "(usually ~/Videos), e.g. to share it.",
+          {"clip_id": {"type": "string"}, "path": {"type": "string", "description": "Optional .mp4 path."}}, ["clip_id"]),
+    _tool("delete_clip", "Delete a Steam clip to free space (exported MP4 files are kept). Needs confirm=true.",
+          {"clip_id": {"type": "string"}, "confirm": {"type": "boolean"}}, ["clip_id"], destructive=True),
     _tool("screenshot", "Game Mode only: capture what is on screen (game, Steam or app in front) as a 1280x800 "
           "PNG. Use it to read settings menus or check what a change did.", read_only=True),
     _tool("press_key", "Full access only. Press keys in the window in front, like a keyboard: 'Escape', 'Return', "
@@ -348,6 +364,11 @@ HANDLERS = {
     "set_fps_limit": lambda a: steam.set_fps_limit(a["fps"], a.get("game"), a.get("wait_seconds", 60)),
     "perf_status": lambda a: steam.perf_status(),
     "measure_fps": lambda a: _measure_fps(a.get("seconds", 20), a.get("game"), a.get("wait_seconds", 60)),
+    "recording_status": lambda a: recording.status(),
+    "set_recording": lambda a: recording.set_recording(a.get("mode"), a.get("keep_minutes"), a.get("quality")),
+    "save_clip": lambda a: recording.save_clip(a.get("seconds", 30), a.get("name")),
+    "export_clip": lambda a: recording.export_clip(a["clip_id"], a.get("path")),
+    "delete_clip": lambda a: recording.delete_clip(a["clip_id"], a.get("confirm", False)),
     "screenshot": lambda a: screen.screenshot(),
     "press_key": lambda a: screen.press_key(a["keys"], a.get("repeat", 1)),
     "press_button": lambda a: gamepad.press(a["buttons"], a.get("hold_ms", 120), a.get("together", False)),

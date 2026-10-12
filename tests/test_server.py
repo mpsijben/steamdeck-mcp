@@ -10,7 +10,7 @@ sys.path.insert(0, ROOT)
 
 import tempfile  # noqa: E402
 
-from steamdeck_mcp import cdp, display, fps, gamepad, maintenance, screen, persist, server, steamos_manager  # noqa: E402
+from steamdeck_mcp import cdp, display, fps, gamepad, maintenance, recording, screen, persist, server, steamos_manager  # noqa: E402
 
 
 def call(name, **args):
@@ -43,6 +43,40 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual([r["id"] for r in replies], [1, 2, 3])
         self.assertIn("tools", replies[1]["result"])
         self.assertEqual(replies[2]["error"]["code"], -32601)
+
+
+class RecordingTests(unittest.TestCase):
+    def test_recording_arguments_validated(self):
+        with self.assertRaises(ValueError):
+            recording.set_recording(mode="always")
+        with self.assertRaises(ValueError):
+            recording.set_recording(keep_minutes=5)
+        with self.assertRaises(ValueError):
+            recording.set_recording(quality="4k")
+        with self.assertRaises(ValueError):
+            recording.set_recording()
+        with self.assertRaises(ValueError):
+            recording.save_clip(2)
+
+    def test_delete_and_export_validated(self):
+        self.assertTrue(call("delete_clip", clip_id="clip_1")["isError"])  # no confirm
+        with self.assertRaises(ValueError):
+            recording.export_clip("../etc/passwd")
+
+    def test_string_and_float_client_settings_encoding(self):
+        sent = []
+        orig = cdp.evaluate
+        cdp.evaluate = lambda expr, **kw: sent.append(expr)
+        try:
+            cdp.set_client_settings({18202: "120min", 18216: 30.0, 18212: 1})
+        finally:
+            cdp.evaluate = orig
+        import base64, re, struct
+        payload = base64.b64decode(re.search(r'SetSetting\("([^"]+)"', sent[0]).group(1))
+        fields = cdp.decode_fields(payload)
+        self.assertEqual(fields[18202], [b"120min"])
+        self.assertEqual(struct.unpack("<f", fields[18216][0])[0], 30.0)
+        self.assertEqual(fields[18212], [1])
 
 
 class PromptTests(unittest.TestCase):

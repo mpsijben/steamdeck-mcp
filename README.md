@@ -12,6 +12,7 @@ allow it, press keys and click, so an assistant can tune a game's settings and c
 > *"Limit charging to 80% and keep it that way after reboots."*
 > *"What can I delete to free up space?"*
 > *"Measure how Dorfromantik runs, then find the lowest TDP that keeps it at 45 FPS."*
+> *"Save the last 30 seconds as a clip and put it in my Videos folder."*
 
 - **Zero dependencies.** Pure Python standard library: no pip, no venv, nothing for a SteamOS update to break.
 - **No root, no password.** Uses the same interfaces Steam itself uses (SteamOS Manager, Steam's client API).
@@ -153,7 +154,7 @@ whatever is in front, so only choose `--full` if you're happy for your assistant
 
 ## Tools
 
-61 tools. Games can be referred to by appid or by (part of) their name, e.g. `"hades"`.
+66 tools. Games can be referred to by appid or by (part of) their name, e.g. `"hades"`.
 ✏️ = changes something · ⚠️ = destructive, needs `confirm=true` or is clearly marked · 🖐️ = keyboard/mouse input,
 only with `--full`.
 
@@ -219,6 +220,20 @@ Steam applies performance settings to the game that was last in front. When the 
 itself, pass `game` and switch to the game within a minute; the tool waits for it. With
 [Remote Control](https://code.claude.com/docs/en/remote-control) (Claude app on your phone) the game simply stays
 in front.
+
+### Game Recording
+
+| Tool | What it does |
+|---|---|
+| `recording_status` | Recording mode, how much background video is kept, quality, what's recording, storage used, latest clips |
+| `set_recording` ✏️ | Off, background (always records, clip moments afterwards) or manual; how long to keep; quality |
+| `save_clip` ✏️ | Save the last N seconds of the background recording as a clip |
+| `export_clip` ✏️ | Export a clip as MP4 (default `~/Videos`) |
+| `delete_clip` ⚠️ | Delete a clip to free space |
+
+Background recording at standard quality uses about **3.5 GB per hour** (measured on a Steam Deck OLED,
+1280×800 at 60 FPS); older video is dropped after the time you keep. When you switch it on while Steam is
+running, a restart of Steam may be needed before recording starts.
 
 ### System & connectivity
 
@@ -303,6 +318,7 @@ uses the same port. Only enable it if you're comfortable with that.
 | Sensors, battery, disks | `/sys`, `/proc` (read-only) |
 | FPS limit, performance profiles | Steam's own Performance settings (`SteamClient.System.Perf` and client settings) |
 | FPS measurement | Steam's performance overlay (mangoapp) logs frames to a temporary folder for the measurement; its config file is restored afterwards |
+| Game Recording | Steam's own recording store (`g_GRS`) and client settings, the same calls its overlay uses |
 | Screenshots | `gamescopectl screenshot` (the same capture as the screenshot button) |
 | Keyboard/mouse input | `xdotool` on the Xwayland display of the window gamescope shows in front |
 | Controller buttons | A virtual Xbox 360 controller via Linux `uinput` (SteamOS gives the desktop user access), unplugged after a minute without presses |
@@ -349,6 +365,7 @@ The code is plain standard-library Python:
 | `steamdeck_mcp/fps.py` | FPS measurement via the performance overlay's logger |
 | `steamdeck_mcp/screen.py` | Screenshots and keyboard/mouse input |
 | `steamdeck_mcp/gamepad.py` | Virtual controller for button presses |
+| `steamdeck_mcp/recording.py` | Steam Game Recording: mode, clips, export |
 | `steamdeck_mcp/system.py` | Audio, network, Bluetooth, processes, session switching |
 | `steamdeck_mcp/maintenance.py` | Libraries, Proton installs, cleanup, logs |
 | `steamdeck_mcp/persist.py` | Settings re-applied after reboot |

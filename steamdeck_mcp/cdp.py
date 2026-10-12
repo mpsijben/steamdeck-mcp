@@ -193,7 +193,15 @@ def decode_fields(buf):
 
 def set_client_settings(fields):
     """Write Steam client settings (CMsgClientSettings) the way Steam's own settings pages do.
-    fields: {field_number: int}; booleans are written as 0/1."""
-    msg = b"".join(varint(n << 3) + varint(int(v)) for n, v in fields.items())
+    fields: {field_number: value}; ints/bools as varints, floats as fixed32, strings length-delimited."""
+    msg = b""
+    for n, v in fields.items():
+        if isinstance(v, str):
+            data = v.encode()
+            msg += varint(n << 3 | 2) + varint(len(data)) + data
+        elif isinstance(v, float):
+            msg += varint(n << 3 | 5) + struct.pack("<f", v)
+        else:
+            msg += varint(n << 3) + varint(int(v))
     payload = base64.b64encode(msg).decode()
     evaluate(f'(async () => {{ await SteamClient.Settings.SetSetting("{payload}"); return true; }})()')
