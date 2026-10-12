@@ -72,9 +72,12 @@ python3 -I /home/deck/steamdeck-mcp/server.py
 <summary><b>Claude Code</b></summary>
 
 ```bash
-claude mcp add steamdeck -s user -- python3 -I /home/deck/steamdeck-mcp/server.py
-claude mcp list   # should show: steamdeck ... ✔ Connected
+claude mcp add steamdeck-mcp -s user -- python3 -I /home/deck/steamdeck-mcp/server.py
+claude mcp list   # should show: steamdeck-mcp ... ✔ Connected
 ```
+
+Use the name `steamdeck-mcp`, not `steamdeck`: the [decky-claude](https://github.com/TuxLux40/decky-claude)
+plugin registers its own server as `steamdeck`, which would hide this one in its sessions.
 </details>
 
 <details>
@@ -85,7 +88,7 @@ Add to `.vscode/mcp.json` or your user `mcp.json`:
 ```json
 {
   "servers": {
-    "steamdeck": { "type": "stdio", "command": "python3", "args": ["-I", "/home/deck/steamdeck-mcp/server.py"] }
+    "steamdeck-mcp": { "type": "stdio", "command": "python3", "args": ["-I", "/home/deck/steamdeck-mcp/server.py"] }
   }
 }
 ```
@@ -97,7 +100,7 @@ Add to `.vscode/mcp.json` or your user `mcp.json`:
 ```json
 {
   "mcpServers": {
-    "steamdeck": { "command": "python3", "args": ["-I", "/home/deck/steamdeck-mcp/server.py"] }
+    "steamdeck-mcp": { "command": "python3", "args": ["-I", "/home/deck/steamdeck-mcp/server.py"] }
   }
 }
 ```
