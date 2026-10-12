@@ -160,6 +160,37 @@ def varint(n):
             return bytes(out)
 
 
+def read_varint(buf, i):
+    n = shift = 0
+    while True:
+        b = buf[i]
+        i += 1
+        n |= (b & 0x7F) << shift
+        shift += 7
+        if not b & 0x80:
+            return n, i
+
+
+def decode_fields(buf):
+    """Top-level fields of a protobuf message: {field_number: [values]}; varints as int, others as bytes."""
+    out, i = {}, 0
+    while i < len(buf):
+        tag, i = read_varint(buf, i)
+        field, wire = tag >> 3, tag & 7
+        if wire == 0:
+            value, i = read_varint(buf, i)
+        elif wire == 2:
+            size, i = read_varint(buf, i)
+            value, i = buf[i:i + size], i + size
+        elif wire in (1, 5):
+            size = 8 if wire == 1 else 4
+            value, i = buf[i:i + size], i + size
+        else:
+            raise ValueError(f"unsupported protobuf wire type {wire}")
+        out.setdefault(field, []).append(value)
+    return out
+
+
 def set_client_settings(fields):
     """Write Steam client settings (CMsgClientSettings) the way Steam's own settings pages do.
     fields: {field_number: int}; booleans are written as 0/1."""

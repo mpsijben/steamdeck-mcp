@@ -91,6 +91,8 @@ TOOLS = [
           "Performance menu. Steam applies it to the app in front: pass 'game' to wait until that game is shown "
           "(ask the user to switch to it). Goes into the game's own profile if it has one (see set_game_profile).",
           {"fps": {"type": "integer"}, "game": GAME, "wait_seconds": WAIT}, ["fps"]),
+    _tool("perf_status", "Game Mode only: the game Steam's Performance settings currently apply to, whether it "
+          "uses its own profile, and its framerate limit. Steam does not expose the measured FPS.", read_only=True),
     _tool("set_game_profile", "Game Mode only: turn Steam's per-game performance profile on or off for a game, "
           "so its framerate limit, TDP etc. no longer follow the global profile. The game must be running; "
           "the tool waits until it is in front (ask the user to switch to it).",
@@ -283,6 +285,7 @@ HANDLERS = {
     "set_tdp": lambda a: _persisting(a, "tdp", a.get("watts"), _steam_synced(hardware.set_tdp, steam.sync_tdp)),
     "set_gpu_clock": lambda a: _persisting(a, "gpu_clock", a.get("mhz"), hardware.set_gpu_clock),
     "set_fps_limit": lambda a: steam.set_fps_limit(a["fps"], a.get("game"), a.get("wait_seconds", 60)),
+    "perf_status": lambda a: steam.perf_status(),
     "set_game_profile": lambda a: steam.set_game_profile(a["game"], a.get("enabled", True), a.get("wait_seconds", 60)),
     "set_brightness": lambda a: steam.set_brightness(a["percent"]),
     "power_settings": lambda a: _power_settings(),

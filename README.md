@@ -131,7 +131,7 @@ MCP over stdio works through SSH, so an AI client on your PC can manage the Deck
 
 ## Tools
 
-54 tools. Games can be referred to by appid or by (part of) their name, e.g. `"hades"`.
+55 tools. Games can be referred to by appid or by (part of) their name, e.g. `"hades"`.
 ✏️ = changes something · ⚠️ = destructive, needs `confirm=true` or is clearly marked.
 
 ### Status
@@ -178,6 +178,7 @@ MCP over stdio works through SSH, so an AI client on your PC can manage the Deck
 | `set_charge_limit` ✏️ | Stop charging at e.g. 80% to reduce battery wear |
 | `set_power_option` ✏️ | CPU governor, CPU scheduler (e.g. `lavd`), CPU boost, GPU performance level/profile, fan control, Wi-Fi power saving, HDMI-CEC (options depend on SteamOS version) |
 | `set_fps_limit` ✏️ | Steam's framerate limit slider, per game or global (Game Mode only) |
+| `perf_status` | Current game, active performance profile and its framerate limit (Game Mode only) |
 | `set_game_profile` ✏️ | Turn Steam's per-game performance profile on/off (Game Mode only) |
 | `set_brightness` ✏️ · `set_volume` ✏️ | Screen brightness, volume and mute |
 | `screen_timeouts` · `set_screen_timeout` ✏️ | When the screen turns off / the Deck sleeps when idle, for Desktop Mode (KDE) and Game Mode (Steam), on battery and charger |

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Fix:** `set_fps_limit` and `set_game_profile` failed after a reboot until Steam's Performance menu had been
+  opened once (they used a Steam UI object that only exists from then on). They now read Steam's performance
+  state directly.
+- **New:** `perf_status` shows the current game, which performance profile is active and its framerate limit.
+
 ## 1.1.0 (2026-10-12)
 
 Tested in Game Mode. 54 tools.

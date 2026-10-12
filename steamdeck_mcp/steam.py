@@ -1,10 +1,11 @@
 """Steam client control via the CEF debugger (SteamClient JS API in SharedJSContext)."""
+import base64
 import json
 import os
 import time
 
 from . import hardware, maintenance
-from .cdp import CDPError, evaluate, set_client_settings
+from .cdp import CDPError, decode_fields, evaluate, set_client_settings, varint
 
 SHORTCUT_TYPE = 1073741824
 
@@ -542,21 +543,38 @@ def sync_charge_limit(percent):
         set_client_settings({CHARGE_LIMIT_ENABLED: 1, CHARGE_LIMIT: int(percent)})
 
 
+def _perf_state():
+    """Steam's performance state (CMsgSystemPerfState): field 3 = current game, 4 = game whose profile is active.
+    Read straight from SteamClient, because Steam only creates its own store once the Performance menu was opened."""
+    raw = evaluate("""(async () => {
+      const m = await new Promise(res => { let h;
+        h = SteamClient.System.Perf.RegisterForStateChanges(x => { res(x); try { h.unregister(); } catch (e) {} });
+        setTimeout(() => res(null), 3000); });
+      return m ? btoa(String.fromCharCode(...new Uint8Array(m))) : null; })()""")
+    if not raw:
+        raise RuntimeError("Steam did not report its performance state.")
+    fields = decode_fields(base64.b64decode(raw))
+    return {"current": str(fields.get(3, [0])[0]), "active": str(fields.get(4, [0])[0])}
+
+
+def _gameid(appid):
+    return _js("const a = __ov(ID); return String((a && a.m_gameid) || ID);", ID=appid)
+
+
 def _wait_for_focus(appid, name, wait_seconds):
     """Steam's Performance settings apply to its current game (the one last shown in front), so wait for it."""
-    gameid = _js("const a = __ov(ID); return String((a && a.m_gameid) || ID);", ID=appid)
+    gameid = _gameid(appid)
     deadline = time.time() + wait_seconds
-    while evaluate("String(SystemPerfStore.m_msgState.current_game_id)") != gameid:
+    while _perf_state()["current"] != gameid:
         if time.time() >= deadline:
             raise RuntimeError(f"{name} was not in front within {wait_seconds} s. Start it, switch to it with the "
                                "Steam button and try again.")
         time.sleep(1)
 
 
-def _perf_profile():
-    state = evaluate("""(() => { const s = SystemPerfStore.m_msgState;
-      return {active: String(s.active_profile_game_id), current: String(s.current_game_id)}; })()""")
-    return "game-specific" if state["active"] == state["current"] else "global (shared by games without their own profile)"
+def _profile_label(state):
+    return ("game-specific" if state["active"] == state["current"]
+            else "global (shared by games without their own profile)")
 
 
 def _perf_target(game, wait_seconds):
@@ -569,6 +587,29 @@ def _perf_target(game, wait_seconds):
     return name
 
 
+def _game_name(gameid):
+    return _js("""const a = SteamUIStore.RunningApps.find(r => String(__ov(r.appid)?.m_gameid || r.appid) === ID)
+      || appStore.allApps.find(o => String(o.m_gameid || o.appid) === ID);
+      return a ? (a.display_name || null) : null;""", ID=gameid)
+
+
+def perf_status():
+    """Steam's current game, which performance profile is active and that profile's framerate limit."""
+    if not hardware.is_game_mode():
+        raise RuntimeError("Only works in Game Mode.")
+    state = _perf_state()
+    limit = evaluate("""(() => { const s = window.settingsStore && settingsStore.m_ClientSettings;
+      return s ? {fps: s.gamescope_app_target_framerate, off: s.gamescope_disable_framelimit} : null; })()""")
+    own = state["active"] == state["current"]
+    return {"current_game": _game_name(state["current"]) or state["current"],
+            "active_profile": (_game_name(state["active"]) or state["active"]) if state["active"] not in ("0", "769")
+                              else "global",
+            "current_game_has_own_profile": own,
+            "fps_limit": None if limit is None else ("off" if limit["off"] else limit["fps"]),
+            "note": "fps_limit is the active profile's limit from Steam's Performance menu. Steam does not expose "
+                    "the measured FPS."}
+
+
 def set_fps_limit(fps, game=None, wait_seconds=60):
     """Steam's framerate slider in the Performance menu; Steam picks the matching refresh rate itself."""
     if fps and not 10 <= fps <= 90:
@@ -578,12 +619,18 @@ def set_fps_limit(fps, game=None, wait_seconds=60):
         set_client_settings({FPS_LIMIT_DISABLED: 0, FPS_LIMIT: int(fps)})
     else:
         set_client_settings({FPS_LIMIT_DISABLED: 1})
-    return {"fps_limit": int(fps) if fps else "off", "game": name or "app in front", "profile": _perf_profile()}
+    return {"fps_limit": int(fps) if fps else "off", "game": name or "app in front",
+            "profile": _profile_label(_perf_state())}
 
 
 def set_game_profile(game, enabled=True, wait_seconds=60):
-    """Turn Steam's per-game performance profile on or off for a game."""
+    """Turn Steam's per-game performance profile on or off for a game, as the Performance menu toggle does."""
     name = _perf_target(game, wait_seconds)
-    evaluate(f"SystemPerfStore.SetGameSpecificProfileEnabled({'true' if enabled else 'false'})")
+    gameid = _perf_state()["current"].encode()
+    per_app = varint(14 << 3) + varint(1 if enabled else 0)  # is_game_perf_profile_enabled
+    delta = varint(2 << 3 | 2) + varint(len(per_app)) + per_app  # settings_delta.per_app
+    msg = varint(1 << 3 | 2) + varint(len(gameid)) + gameid + varint(3 << 3 | 2) + varint(len(delta)) + delta
+    payload = base64.b64encode(msg).decode()
+    evaluate(f'(async () => {{ await SteamClient.System.Perf.UpdateSettings("{payload}"); return true; }})()')
     time.sleep(1)
-    return {"game": name, "profile": _perf_profile()}
+    return {"game": name, "profile": _profile_label(_perf_state())}
