@@ -3,17 +3,20 @@
 **Let an AI assistant manage your Steam Deck.** steamdeck-mcp is an [MCP](https://modelcontextprotocol.io) server
 that gives Claude, Copilot, Cursor or any other MCP client safe, structured control over your Deck: battery and
 temperatures, TDP and charge limit, per-game Proton versions, installing and moving games, downloads, Bluetooth,
-cleanup and troubleshooting game logs.
+cleanup and troubleshooting game logs. In Game Mode it can also measure a game's FPS, take screenshots and, if you
+allow it, press keys and click, so an assistant can tune a game's settings and check the result.
 
 > *"How much battery do I have left and what's draining it?"*
 > *"Put Cyberpunk on the latest GE-Proton and set my TDP to 10 W."*
 > *"Install Hades on the SD card."*  ·  *"Why won't Hogwarts Legacy start?"*
 > *"Limit charging to 80% and keep it that way after reboots."*
 > *"What can I delete to free up space?"*
+> *"Measure how Dorfromantik runs, then find the lowest TDP that keeps it at 45 FPS."*
 
 - **Zero dependencies.** Pure Python standard library: no pip, no venv, nothing for a SteamOS update to break.
 - **No root, no password.** Uses the same interfaces Steam itself uses (SteamOS Manager, Steam's client API).
 - **Safe by default.** Destructive actions need explicit confirmation; nothing is deleted that a game still uses.
+- **You choose how much it may do:** look only, change settings, or full control with keyboard and mouse input.
 - **Works with any MCP client** and any model with tool calling.
 
 ## Contents
@@ -21,6 +24,7 @@ cleanup and troubleshooting game logs.
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Connecting your AI client](#connecting-your-ai-client)
+- [Access levels](#access-levels)
 - [Tools](#tools)
 - [Settings that survive a reboot](#settings-that-survive-a-reboot)
 - [Safety](#safety)
@@ -126,13 +130,31 @@ MCP over stdio works through SSH, so an AI client on your PC can manage the Deck
    ```
 </details>
 
+## Access levels
+
+Pick a level when you register the server by adding a flag to the command (or set `STEAMDECK_MCP_LEVEL`):
+
+| Level | Flag | What the assistant can do |
+|---|---|---|
+| Read-only | `--readonly` | Look only: status, games, logs, performance, FPS measurements, screenshots |
+| Standard | *(none)* | Also change settings: TDP, FPS limit, Proton, installs, downloads, power, … |
+| Full | `--full` | Also **keyboard and mouse input** in Game Mode (`press_key`, `type_text`, `click`), e.g. to change a game's own graphics settings |
+
+```bash
+claude mcp add steamdeck-mcp -s user -- python3 -I /home/deck/steamdeck-mcp/server.py --full
+```
+
+Tools above your level are not offered to the assistant at all. Input tools send real key presses and clicks to
+whatever is in front, so only choose `--full` if you're happy for your assistant to operate the Deck.
+
 > **Model choice:** any model with tool calling works. Small local models (e.g. via Ollama) sometimes pick the
 > wrong tool; larger models do much better.
 
 ## Tools
 
-55 tools. Games can be referred to by appid or by (part of) their name, e.g. `"hades"`.
-✏️ = changes something · ⚠️ = destructive, needs `confirm=true` or is clearly marked.
+60 tools. Games can be referred to by appid or by (part of) their name, e.g. `"hades"`.
+✏️ = changes something · ⚠️ = destructive, needs `confirm=true` or is clearly marked · 🖐️ = keyboard/mouse input,
+only with `--full`.
 
 ### Status
 
@@ -177,12 +199,24 @@ MCP over stdio works through SSH, so an AI client on your PC can manage the Deck
 | `set_gpu_clock` ✏️ | Fixed GPU clock or automatic |
 | `set_charge_limit` ✏️ | Stop charging at e.g. 80% to reduce battery wear |
 | `set_power_option` ✏️ | CPU governor, CPU scheduler (e.g. `lavd`), CPU boost, GPU performance level/profile, fan control, Wi-Fi power saving, HDMI-CEC (options depend on SteamOS version) |
-| `set_fps_limit` ✏️ | Steam's framerate limit slider, per game or global (Game Mode only) |
-| `perf_status` | Current game, active performance profile and its framerate limit (Game Mode only) |
-| `set_game_profile` ✏️ | Turn Steam's per-game performance profile on/off (Game Mode only) |
 | `set_brightness` ✏️ · `set_volume` ✏️ | Screen brightness, volume and mute |
 | `screen_timeouts` · `set_screen_timeout` ✏️ | When the screen turns off / the Deck sleeps when idle, for Desktop Mode (KDE) and Game Mode (Steam), on battery and charger |
 | `persistent_settings` · `forget_persistent_settings` ✏️ | See [Settings that survive a reboot](#settings-that-survive-a-reboot) |
+
+### Performance, screen & input (Game Mode)
+
+| Tool | What it does |
+|---|---|
+| `measure_fps` | Measure the game in front for N seconds: average FPS, 1% low, frame time, CPU/GPU load, temperatures, power, GPU clock. Use before and after a change |
+| `perf_status` | Current game, which performance profile is active and its framerate limit |
+| `set_fps_limit` ✏️ · `set_game_profile` ✏️ | Steam's framerate limit, and per-game performance profiles on/off |
+| `screenshot` | What's on screen as an image, e.g. to read a game's settings menu |
+| `press_key` 🖐️ · `type_text` 🖐️ · `click` 🖐️ | Keyboard and mouse input in the window in front |
+
+Steam applies performance settings to the game that was last in front. When the assistant runs on the Deck
+itself, pass `game` and switch to the game within a minute; the tool waits for it. With
+[Remote Control](https://code.claude.com/docs/en/remote-control) (Claude app on your phone) the game simply stays
+in front.
 
 ### System & connectivity
 
@@ -228,6 +262,10 @@ KDE themselves and always persist.
 - **Limits come from SteamOS.** TDP, GPU clock and charge limit are validated against the ranges SteamOS Manager
   reports for your device.
 - `read_log` only reads files in your home directory or on removable media.
+- **Input is opt-in.** Keyboard and mouse tools exist only at the `--full` level and are marked as non-read-only,
+  so clients that ask before changes ask for every key press or click. `type_text` is capped at 500 characters.
+- **Measurements leave no trace.** `measure_fps` adds its lines to the overlay's config only for the measurement,
+  then removes exactly those lines and its temporary log folder.
 
 **About the Steam integration:** Steam's debugging port listens on `127.0.0.1` only, so other devices on your
 network can't reach it. Any program running on your Deck can, though; that is also true for Decky Loader, which
@@ -243,7 +281,10 @@ uses the same port. Only enable it if you're comfortable with that.
 | Audio, Wi-Fi, Bluetooth, processes, Game/Desktop switch | `pactl`, `nmcli`, `bluetoothctl`, `ps`, `steamos-session-select` |
 | Screen/sleep timeouts | KDE `powerdevilrc` (Desktop Mode) and Steam's client settings (Game Mode) |
 | Sensors, battery, disks | `/sys`, `/proc` (read-only) |
-| FPS limit | gamescope's `GAMESCOPE_FPS_LIMIT` property |
+| FPS limit, performance profiles | Steam's own Performance settings (`SteamClient.System.Perf` and client settings) |
+| FPS measurement | Steam's performance overlay (mangoapp) logs frames to a temporary folder for the measurement; its config file is restored afterwards |
+| Screenshots | `gamescopectl screenshot` (the same capture as the screenshot button) |
+| Keyboard/mouse input | `xdotool` on the Xwayland display of the window gamescope shows in front |
 | GE-Proton, cleanup, logs | Files under `~/.local/share/Steam` and your Steam libraries |
 
 **A note on stability:** `SteamClient` is Steam's internal, undocumented API (the same one Decky Loader plugins
@@ -258,7 +299,9 @@ adapts to whatever your SteamOS version offers. Hardware, file and system tools 
 | *"Steam CEF debugger not reachable"* | Steam isn't running, or the integration isn't enabled: run `enable_steam_integration` and restart Steam |
 | *"SharedJSContext not found"* | Steam is still starting; try again in a few seconds |
 | Power tools say SteamOS Manager is unavailable | Very old SteamOS; TDP/GPU fall back to `steamos-priv-write`, other power options need SteamOS 3.6+ |
-| `set_fps_limit` fails | Only works in Game Mode |
+| `set_fps_limit`, `measure_fps`, `screenshot` fail | They only work in Game Mode |
+| `measure_fps`: *"mangoapp wrote no log"* | Nothing was drawing frames in front (e.g. a paused or minimised game); start playing and try again |
+| Input tools are missing | They are only offered with `--full` (see [Access levels](#access-levels)) |
 | `move_game` fails with error 19 | Steam queued a file check after the previous move; let downloads run until it finishes |
 | A tool broke after a Steam update | Please [open an issue](https://github.com/mpsijben/steamdeck-mcp/issues) with the error text |
 
@@ -281,7 +324,9 @@ The code is plain standard-library Python:
 | `steamdeck_mcp/steam.py` | Steam client control (games, installs, downloads, shortcuts) |
 | `steamdeck_mcp/cdp.py` | Minimal Chrome DevTools Protocol client for Steam's debugging port |
 | `steamdeck_mcp/steamos_manager.py` | SteamOS Manager D-Bus settings |
-| `steamdeck_mcp/hardware.py` | Sensors, battery, TDP/GPU, FPS limit |
+| `steamdeck_mcp/hardware.py` | Sensors, battery, TDP/GPU |
+| `steamdeck_mcp/fps.py` | FPS measurement via the performance overlay's logger |
+| `steamdeck_mcp/screen.py` | Screenshots and keyboard/mouse input |
 | `steamdeck_mcp/system.py` | Audio, network, Bluetooth, processes, session switching |
 | `steamdeck_mcp/maintenance.py` | Libraries, Proton installs, cleanup, logs |
 | `steamdeck_mcp/persist.py` | Settings re-applied after reboot |

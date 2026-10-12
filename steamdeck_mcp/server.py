@@ -1,9 +1,10 @@
 """Steam Deck MCP server: JSON-RPC 2.0 over stdio, stdlib only."""
 import json
+import os
 import sys
 import traceback
 
-from . import __version__, cdp, display, hardware, maintenance, persist, steam, steamos_manager, system
+from . import __version__, cdp, display, fps, hardware, maintenance, persist, screen, steam, steamos_manager, system
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 
@@ -11,13 +12,25 @@ WAIT = {"type": "integer", "description": "How long to wait for the game to be i
 GAME = {"type": ["string", "integer"], "description": "Appid or (part of) the name, e.g. 'Battle.net' or 1086940."}
 
 
-def _tool(name, description, props=None, required=(), read_only=False, destructive=False):
+# Access levels, chosen when the server is registered (--readonly / --full, or STEAMDECK_MCP_LEVEL):
+#   readonly: only tools that look; standard (default): also change settings; full: also keyboard/mouse input.
+LEVELS = ("readonly", "standard", "full")
+LEVEL = "standard"
+
+
+def _tool(name, description, props=None, required=(), read_only=False, destructive=False, level=None):
     return {
         "name": name,
         "description": description,
         "inputSchema": {"type": "object", "properties": props or {}, "required": list(required)},
         "annotations": {"readOnlyHint": read_only, "destructiveHint": destructive},
+        "_level": level or ("readonly" if read_only else "standard"),
     }
+
+
+def _visible_tools():
+    allowed = LEVELS[:LEVELS.index(LEVEL) + 1]
+    return [{k: v for k, v in t.items() if k != "_level"} for t in TOOLS if t["_level"] in allowed]
 
 
 TOOLS = [
@@ -93,6 +106,27 @@ TOOLS = [
           {"fps": {"type": "integer"}, "game": GAME, "wait_seconds": WAIT}, ["fps"]),
     _tool("perf_status", "Game Mode only: the game Steam's Performance settings currently apply to, whether it "
           "uses its own profile, and its framerate limit. Steam does not expose the measured FPS.", read_only=True),
+    _tool("measure_fps", "Game Mode only: measure the app in front for N seconds (default 20) with Steam's "
+          "performance overlay logger: average FPS, 1% low, frame time, CPU/GPU load, temperatures, power and GPU "
+          "clock. Pass 'game' to wait until that game is in front first (ask the user to switch to it and play). "
+          "Use it before and after changing settings to compare.",
+          {"seconds": {"type": "integer", "description": "5-120, default 20."}, "game": GAME, "wait_seconds": WAIT},
+          read_only=True),
+    _tool("screenshot", "Game Mode only: capture what is on screen (game, Steam or app in front) as a 1280x800 "
+          "PNG. Use it to read settings menus or check what a change did.", read_only=True),
+    _tool("press_key", "Full access only. Press keys in the window in front, like a keyboard: 'Escape', 'Return', "
+          "'Up', 'Tab', 'ctrl+s', 'alt+Return' (xdotool key names; space-separated for a sequence). Real input: "
+          "take a screenshot first and make sure the right window is in front.",
+          {"keys": {"type": "string"}, "repeat": {"type": "integer", "description": "Press the sequence N times (default 1, max 20)."}},
+          ["keys"], level="full"),
+    _tool("type_text", "Full access only. Type text into the window in front (max 500 characters). Real input.",
+          {"text": {"type": "string"}}, ["text"], level="full"),
+    _tool("click", "Full access only. Click at x/y in screenshot coordinates (1280x800) in the window in front. "
+          "Real input: take a screenshot first to find the spot.",
+          {"x": {"type": "integer"}, "y": {"type": "integer"},
+           "button": {"enum": ["left", "right", "middle"], "description": "Default left."},
+           "double": {"type": "boolean", "description": "Double-click (default false)."}},
+          ["x", "y"], level="full"),
     _tool("set_game_profile", "Game Mode only: turn Steam's per-game performance profile on or off for a game, "
           "so its framerate limit, TDP etc. no longer follow the global profile. The game must be running; "
           "the tool waits until it is in front (ask the user to switch to it).",
@@ -253,6 +287,12 @@ def _set_screen_timeout(screen, sleep, mode, source):
     return result
 
 
+def _measure_fps(seconds, game, wait_seconds):
+    name = steam._perf_target(game, wait_seconds) if game is not None else None
+    result = fps.measure(seconds)
+    return {"game": name or "app in front", **result}
+
+
 def _remove_proton(name):
     # config.vdf is only flushed when Steam exits, so also check Steam's live settings.
     try:
@@ -286,6 +326,11 @@ HANDLERS = {
     "set_gpu_clock": lambda a: _persisting(a, "gpu_clock", a.get("mhz"), hardware.set_gpu_clock),
     "set_fps_limit": lambda a: steam.set_fps_limit(a["fps"], a.get("game"), a.get("wait_seconds", 60)),
     "perf_status": lambda a: steam.perf_status(),
+    "measure_fps": lambda a: _measure_fps(a.get("seconds", 20), a.get("game"), a.get("wait_seconds", 60)),
+    "screenshot": lambda a: screen.screenshot(),
+    "press_key": lambda a: screen.press_key(a["keys"], a.get("repeat", 1)),
+    "type_text": lambda a: screen.type_text(a["text"]),
+    "click": lambda a: screen.click(a["x"], a["y"], a.get("button", "left"), a.get("double", False)),
     "set_game_profile": lambda a: steam.set_game_profile(a["game"], a.get("enabled", True), a.get("wait_seconds", 60)),
     "set_brightness": lambda a: steam.set_brightness(a["percent"]),
     "power_settings": lambda a: _power_settings(),
@@ -332,10 +377,14 @@ HANDLERS = {
 
 def _call_tool(params):
     name, args = params.get("name"), params.get("arguments") or {}
-    if name not in HANDLERS:
-        return {"content": [{"type": "text", "text": f"Unknown tool: {name}"}], "isError": True}
+    if name not in HANDLERS or name not in {t["name"] for t in _visible_tools()}:
+        hint = "" if name not in HANDLERS else f" at access level '{LEVEL}'"
+        return {"content": [{"type": "text", "text": f"Unknown tool: {name}{hint}"}], "isError": True}
     try:
         result = HANDLERS[name](args)
+        if isinstance(result, dict) and "image" in result:
+            return {"content": [{"type": "image", "data": result["image"], "mimeType": result["mime"]},
+                                {"type": "text", "text": result["text"]}]}
         text = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, indent=2)
         return {"content": [{"type": "text", "text": text}]}
     except Exception as e:  # report to the model instead of crashing the server
@@ -351,15 +400,16 @@ def _handle(msg):
         return {
             "protocolVersion": requested if requested in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0],
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "steamdeck", "version": __version__},
+            "serverInfo": {"name": "steamdeck-mcp", "version": __version__},
             "instructions": "Controls this Steam Deck: system status, games, per-game and global Proton, "
                             "downloads, TDP/GPU/CPU/charge limit, audio, Wi-Fi, Bluetooth, power, GE-Proton installs, "
-                            "cleanup and game logs. Game/Proton tools need Steam running "
-                            "with the integration enabled (see steam_integration_status). Reply to the user in "
-                            "their own language.",
+                            "cleanup and game logs, plus screenshots (and keyboard/mouse input at full access). "
+                            "Game/Proton tools need Steam running with the integration enabled (see "
+                            f"steam_integration_status). Access level: {LEVEL}. Reply to the user in their own "
+                            "language.",
         }
     if method == "tools/list":
-        return {"tools": TOOLS}
+        return {"tools": _visible_tools()}
     if method == "tools/call":
         return _call_tool(params)
     if method == "ping":
@@ -367,10 +417,23 @@ def _handle(msg):
     raise KeyError(method)
 
 
+def _set_level(argv):
+    global LEVEL
+    level = os.environ.get("STEAMDECK_MCP_LEVEL", "standard")
+    if "--readonly" in argv:
+        level = "readonly"
+    if "--full" in argv:
+        level = "full"
+    if level not in LEVELS:
+        raise SystemExit(f"Unknown access level '{level}'; use one of {', '.join(LEVELS)}.")
+    LEVEL = level
+
+
 def main():
     if "--apply-persistent" in sys.argv[1:]:  # run by the systemd user timer after boot
         print(json.dumps(persist.apply_all(), indent=2))
         return
+    _set_level(sys.argv[1:])
     for line in sys.stdin:
         line = line.strip()
         if not line:

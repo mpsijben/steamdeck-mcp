@@ -15,7 +15,7 @@ sys.path.insert(0, ROOT)
 from steamdeck_mcp.server import TOOLS  # noqa: E402
 
 # Tools that need arguments get a harmless default; tools that are slow or hit the network are skipped.
-DEFAULT_ARGS = {"game_info": None, "find_game_logs": None, "read_log": None}
+DEFAULT_ARGS = {"game_info": None, "find_game_logs": None, "read_log": None, "measure_fps": {"seconds": 5}}
 
 
 def run(calls, timeout=300):
@@ -33,7 +33,9 @@ def run(calls, timeout=300):
         result = reply.get("result", {})
         failed = "error" in reply or result.get("isError")
         failures += bool(failed)
-        text = result["content"][0]["text"] if "content" in result else json.dumps(reply.get("error"))
+        texts = [c["text"] for c in result.get("content", []) if c["type"] == "text"]
+        images = sum(c["type"] == "image" for c in result.get("content", []))
+        text = (f"[{images} image] " if images else "") + (texts[0] if texts else json.dumps(reply.get("error")))
         print(f"{'FAIL' if failed else ' ok '}  {name}: {text[:200 if failed else 80].replace(chr(10), ' ')}")
     return failures
 
@@ -42,6 +44,6 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         calls = [(sys.argv[1], json.loads(sys.argv[2]) if len(sys.argv) > 2 else {})]
     else:
-        calls = [(t["name"], {}) for t in TOOLS
+        calls = [(t["name"], DEFAULT_ARGS.get(t["name"]) or {}) for t in TOOLS
                  if t["annotations"]["readOnlyHint"] and DEFAULT_ARGS.get(t["name"], {}) is not None]
     sys.exit(1 if run(calls) else 0)

@@ -10,7 +10,7 @@ sys.path.insert(0, ROOT)
 
 import tempfile  # noqa: E402
 
-from steamdeck_mcp import cdp, display, maintenance, persist, server, steamos_manager  # noqa: E402
+from steamdeck_mcp import cdp, display, fps, maintenance, screen, persist, server, steamos_manager  # noqa: E402
 
 
 def call(name, **args):
@@ -127,6 +127,93 @@ class PersistTests(unittest.TestCase):
     def test_without_persist_flag_nothing_is_saved(self):
         server._persisting({}, "tdp", 10, lambda v: {"tdp": v})
         self.assertEqual(persist.load(), {})
+
+
+class AccessLevelTests(unittest.TestCase):
+    def tearDown(self):
+        server.LEVEL = "standard"
+
+    def names(self, level):
+        server.LEVEL = level
+        return {t["name"] for t in server._visible_tools()}
+
+    def test_levels_are_nested(self):
+        ro, std, full = self.names("readonly"), self.names("standard"), self.names("full")
+        self.assertTrue(ro < std < full)
+        self.assertEqual(full, {t["name"] for t in server.TOOLS})
+
+    def test_readonly_has_only_read_only_tools(self):
+        server.LEVEL = "readonly"
+        self.assertTrue(all(t["annotations"]["readOnlyHint"] for t in server._visible_tools()))
+        self.assertTrue(call("set_tdp", watts=10)["isError"])
+
+    def test_input_tools_only_at_full(self):
+        self.assertFalse({"press_key", "type_text", "click"} & self.names("standard"))
+        self.assertTrue({"press_key", "type_text", "click"} <= self.names("full"))
+        server.LEVEL = "standard"
+        self.assertIn("access level", call("click", x=1, y=1)["content"][0]["text"])
+
+    def test_level_from_flags_and_env(self):
+        server._set_level(["--full"])
+        self.assertEqual(server.LEVEL, "full")
+        server._set_level(["--readonly"])
+        self.assertEqual(server.LEVEL, "readonly")
+        os.environ["STEAMDECK_MCP_LEVEL"] = "bogus"
+        try:
+            with self.assertRaises(SystemExit):
+                server._set_level([])
+        finally:
+            del os.environ["STEAMDECK_MCP_LEVEL"]
+
+    def test_tools_list_hides_internal_fields(self):
+        self.assertTrue(all("_level" not in t for t in server._handle({"method": "tools/list"})["tools"]))
+
+
+class InputValidationTests(unittest.TestCase):
+    def test_click_outside_screen_rejected(self):
+        with self.assertRaises(ValueError):
+            screen.click(1280, 10)
+        with self.assertRaises(ValueError):
+            screen.click(10, 10, button="side")
+
+    def test_empty_or_long_input_rejected(self):
+        with self.assertRaises(ValueError):
+            screen.press_key("  ")
+        with self.assertRaises(ValueError):
+            screen.type_text("x" * 501)
+
+
+class FpsTests(unittest.TestCase):
+    CSV = ("os,cpu,gpu,ram,kernel,driver,cpuscheduler\nSteamOS,APU,,1,6,,powersave\n"
+           "fps,frametime,cpu_load,cpu_power,gpu_load,cpu_temp,gpu_temp,gpu_core_clock,gpu_mem_clock,gpu_vram_used,"
+           "gpu_power,ram_used,swap_used,process_rss,cpu_mhz,elapsed\n")
+
+    def test_summary_from_mangohud_log(self):
+        with tempfile.TemporaryDirectory() as d:
+            rows = [f"60,{ft},10,3,50,60,55,1000,800,1,5,4,0,0,2400,{i * 16_000_000}" for i, ft in
+                    enumerate([16.0] * 99 + [50.0])]
+            with open(os.path.join(d, "mangoapp_x.csv"), "w") as f:
+                f.write(self.CSV + "\n".join(rows) + "\n")
+            r = fps._summary(d)
+        self.assertEqual(r["frames"], 100)
+        self.assertEqual(r["1%_low_fps"], 20.0)  # the one 50 ms frame
+        self.assertAlmostEqual(r["average_fps"], 1000 / 16.34, places=0)
+        self.assertEqual(r["gpu_power_w"], 5.0)
+
+    def test_added_config_lines_are_removed_exactly(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "mangohud.config")
+            original = "control=mangohud\npreset=1\n"
+            added = ["output_folder=/x", "autostart_log=1"]
+            with open(path, "w") as f:
+                f.write(original + "\n" + "\n".join(added) + "\n")
+            fps._remove_lines(path, set(added))
+            with open(path) as f:
+                self.assertEqual(f.read(), original)
+
+    def test_seconds_validated(self):
+        with self.assertRaises((ValueError, RuntimeError)):  # RuntimeError outside Game Mode
+            fps.measure(1)
 
 
 if __name__ == "__main__":
