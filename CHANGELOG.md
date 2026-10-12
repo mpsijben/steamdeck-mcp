@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 (2026-10-12)
 
 - **New: Steam Game Recording.** `recording_status`, `set_recording` (off / background / manual, how long to keep,
   quality), `save_clip` (the last N seconds, like the clip button), `export_clip` (MP4, default `~/Videos`) and
