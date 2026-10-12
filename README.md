@@ -26,6 +26,7 @@ allow it, press keys and click, so an assistant can tune a game's settings and c
 - [Connecting your AI client](#connecting-your-ai-client)
 - [Access levels](#access-levels)
 - [Tools](#tools)
+- [Optimizing a game](#optimizing-a-game)
 - [Settings that survive a reboot](#settings-that-survive-a-reboot)
 - [Safety](#safety)
 - [How it works](#how-it-works)
@@ -195,7 +196,7 @@ only with `--full`.
 
 | Tool | What it does |
 |---|---|
-| `set_tdp` ✏️ | TDP limit (3–15 W) |
+| `set_tdp` ✏️ | TDP limit (3–15 W); with `game` it goes into that game's performance profile |
 | `set_gpu_clock` ✏️ | Fixed GPU clock or automatic |
 | `set_charge_limit` ✏️ | Stop charging at e.g. 80% to reduce battery wear |
 | `set_power_option` ✏️ | CPU governor, CPU scheduler (e.g. `lavd`), CPU boost, GPU performance level/profile, fan control, Wi-Fi power saving, HDMI-CEC (options depend on SteamOS version) |
@@ -236,6 +237,24 @@ in front.
 |---|---|
 | `cleanup_report` | Proton prefixes and shader caches of games that are gone, with sizes (deletes nothing) |
 | `delete_orphans` ⚠️ | Delete what `cleanup_report` marked as orphaned |
+
+## Optimizing a game
+
+The repo includes a step-by-step method for tuning a game: lock a target frame rate, then lower the TDP until it
+no longer holds, measuring with `measure_fps` after every change and only touching in-game graphics with your
+consent. It ends with a before/after table and an estimate of your playtime.
+
+- **Any MCP client:** the server offers it as the prompt `optimize_game` (arguments `game` and `goal`:
+  battery, balanced or performance). In Claude Code it shows up as `/mcp__steamdeck-mcp__optimize_game`.
+- **Claude Code skill:** link it once and Claude uses it whenever you ask to optimise a game:
+  ```bash
+  ln -s ~/steamdeck-mcp/skills/optimize-game ~/.claude/skills/optimize-game
+  ```
+
+> *"Optimize Hades for battery."*  ·  *"Dorfromantik stutters, can you make it run smoothly?"*
+
+Works best when you talk to the assistant from your phone (Remote Control), so the game stays in front. On the
+Deck itself the tools wait until you switch to the game.
 
 ## Settings that survive a reboot
 

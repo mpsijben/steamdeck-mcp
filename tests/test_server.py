@@ -45,6 +45,33 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(replies[2]["error"]["code"], -32601)
 
 
+class PromptTests(unittest.TestCase):
+    def test_prompts_listed_without_internal_fields(self):
+        prompts = server._handle({"method": "prompts/list"})["prompts"]
+        self.assertEqual([p["name"] for p in prompts], ["optimize_game"])
+        self.assertTrue(all("file" not in p for p in prompts))
+
+    def test_optimize_prompt_uses_skill_text(self):
+        r = server._handle({"method": "prompts/get", "params": {"name": "optimize_game",
+                                                               "arguments": {"game": "Hades", "goal": "battery"}}})
+        text = r["messages"][0]["content"]["text"]
+        self.assertTrue(text.startswith("Optimize Hades for battery."))
+        self.assertIn("measure_fps", text)
+        self.assertNotIn("description:", text.split("\n\n", 1)[1][:200])  # frontmatter stripped
+
+    def test_skill_only_mentions_existing_tools(self):
+        import re
+        with open(os.path.join(ROOT, "skills", "optimize-game", "SKILL.md")) as f:
+            used = set(re.findall(r"`([a-z_]+)`", f.read()))
+        tools = {t["name"] for t in server.TOOLS}
+        args = {"game", "persist", "power_w", "cpu_power_w", "gpu_power_w"}
+        self.assertFalse({u for u in used if "_" in u} - tools - args - {"capacity_wh_full"})
+
+    def test_unknown_prompt_is_error(self):
+        with self.assertRaises(ValueError):
+            server._get_prompt({"name": "nope"})
+
+
 class SafetyTests(unittest.TestCase):
     def test_delete_orphans_requires_confirm(self):
         r = call("delete_orphans", appids=[123], confirm=False)
@@ -63,6 +90,11 @@ class SafetyTests(unittest.TestCase):
         self.assertNotEqual(maintenance._classify(42, set(), set(), blob), "orphan")
         self.assertEqual(maintenance._classify(43, set(), set(), blob), "orphan")
         self.assertEqual(maintenance._classify(0, set(), set(), b""), "system")
+
+    def test_tdp_persist_with_game_refused(self):
+        r = call("set_tdp", watts=10, persist=True, game="x")
+        self.assertTrue(r["isError"])
+        self.assertIn("persist", r["content"][0]["text"])
 
     def test_tdp_and_gpu_ranges_validated(self):
         self.assertTrue(call("set_tdp", watts=50)["isError"])

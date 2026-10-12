@@ -96,8 +96,10 @@ TOOLS = [
     _tool("stop_game", "Force-quit a running game (unsaved progress is lost).",
           {"game": GAME}, ["game"], destructive=True),
     _tool("set_tdp", "Set the TDP limit (3-15 W). Lower = longer battery life and cooler. Omit 'watts' to "
-          "restore the default. In Game Mode the value is also stored in Steam, so its Performance slider shows it.",
-          {"watts": {"type": "number"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically)."}}),
+          "restore the default. In Game Mode the value is also stored in Steam's active performance profile, so its "
+          "slider shows it; pass 'game' to wait until that game is in front so it lands in the game's profile.",
+          {"watts": {"type": "number"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically). Not with 'game'."},
+           "game": GAME, "wait_seconds": WAIT}),
     _tool("set_gpu_clock", "Pin the GPU clock (200-1600 MHz), or omit 'mhz' to return to automatic.",
           {"mhz": {"type": "integer"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically)."}}),
     _tool("set_fps_limit", "Game Mode only: set Steam's framerate limit (10-90, 0 = off), like the slider in the "
@@ -294,6 +296,18 @@ def _set_screen_timeout(screen, sleep, mode, source):
     return result
 
 
+def _set_tdp(args):
+    game = args.get("game")
+    if game is not None:
+        if args.get("persist"):
+            raise ValueError("persist re-applies one TDP for everything after a reboot; don't combine it with 'game' "
+                             "(a game's profile keeps its own TDP).")
+        name = steam._perf_target(game, args.get("wait_seconds", 60))
+        result = _steam_synced(hardware.set_tdp, steam.sync_tdp)(args.get("watts"))
+        return {**result, "game": name}
+    return _persisting(args, "tdp", args.get("watts"), _steam_synced(hardware.set_tdp, steam.sync_tdp))
+
+
 def _measure_fps(seconds, game, wait_seconds):
     name = steam._perf_target(game, wait_seconds) if game is not None else None
     result = fps.measure(seconds)
@@ -329,7 +343,7 @@ HANDLERS = {
     "set_launch_options": lambda a: steam.set_launch_options(a["game"], a["options"]),
     "launch_game": lambda a: steam.launch_game(a["game"]),
     "stop_game": lambda a: steam.stop_game(a["game"]),
-    "set_tdp": lambda a: _persisting(a, "tdp", a.get("watts"), _steam_synced(hardware.set_tdp, steam.sync_tdp)),
+    "set_tdp": lambda a: _set_tdp(a),
     "set_gpu_clock": lambda a: _persisting(a, "gpu_clock", a.get("mhz"), hardware.set_gpu_clock),
     "set_fps_limit": lambda a: steam.set_fps_limit(a["fps"], a.get("game"), a.get("wait_seconds", 60)),
     "perf_status": lambda a: steam.perf_status(),
@@ -383,6 +397,40 @@ HANDLERS = {
 }
 
 
+SKILLS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills")
+PROMPTS = [{
+    "name": "optimize_game",
+    "description": "Tune a game for the best balance of frame rate, battery life and temperature: measure, change "
+                   "one setting, measure again.",
+    "arguments": [{"name": "game", "description": "Game to optimise (default: the one running).", "required": False},
+                  {"name": "goal", "description": "battery, balanced or performance (default: ask).",
+                   "required": False}],
+    "file": "optimize-game/SKILL.md",
+}]
+
+
+def _skill_body(path):
+    with open(os.path.join(SKILLS_DIR, path)) as f:
+        text = f.read()
+    return text.split("---", 2)[2].strip() if text.startswith("---") else text  # drop the skill's frontmatter
+
+
+def _get_prompt(params):
+    prompt = next((p for p in PROMPTS if p["name"] == params.get("name")), None)
+    if prompt is None:
+        raise ValueError(f"Unknown prompt: {params.get('name')}")
+    args = params.get("arguments") or {}
+    try:
+        text = _skill_body(prompt["file"])
+    except OSError as e:
+        raise ValueError(f"Prompt text not found ({e.filename}); is the skills folder next to the server?") from e
+    request = "Optimize " + (args.get("game") or "the game that is running")
+    if args.get("goal"):
+        request += f" for {args['goal']}"
+    return {"description": prompt["description"],
+            "messages": [{"role": "user", "content": {"type": "text", "text": f"{request}.\n\n{text}"}}]}
+
+
 def _call_tool(params):
     name, args = params.get("name"), params.get("arguments") or {}
     if name not in HANDLERS or name not in {t["name"] for t in _visible_tools()}:
@@ -407,7 +455,7 @@ def _handle(msg):
         requested = params.get("protocolVersion")
         return {
             "protocolVersion": requested if requested in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0],
-            "capabilities": {"tools": {}},
+            "capabilities": {"tools": {}, "prompts": {}},
             "serverInfo": {"name": "steamdeck-mcp", "version": __version__},
             "instructions": "Controls this Steam Deck: system status, games, per-game and global Proton, "
                             "downloads, TDP/GPU/CPU/charge limit, audio, Wi-Fi, Bluetooth, power, GE-Proton installs, "
@@ -420,6 +468,10 @@ def _handle(msg):
         return {"tools": _visible_tools()}
     if method == "tools/call":
         return _call_tool(params)
+    if method == "prompts/list":
+        return {"prompts": [{k: v for k, v in p.items() if k != "file"} for p in PROMPTS]}
+    if method == "prompts/get":
+        return _get_prompt(params)
     if method == "ping":
         return {}
     raise KeyError(method)

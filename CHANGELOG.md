@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **New:** optimize-game method, as the MCP prompt `optimize_game` and as a Claude Code skill
+  (`skills/optimize-game`): set a target FPS, lower the TDP step by step while measuring, report before/after with
+  estimated playtime.
+- `set_tdp` takes `game` (and `wait_seconds`) like `set_fps_limit`, so the TDP lands in that game's profile.
+
 ## 1.2.0 (2026-10-12)
 
 Lets an assistant look at and operate a game, so it can tune settings and check the result. 61 tools.
