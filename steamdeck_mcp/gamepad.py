@@ -1,13 +1,15 @@
 """A virtual Xbox 360 controller (Linux uinput) for pressing controller buttons in games.
 
 Games and Steam see it as a second controller, the same kind of device Steam itself creates for games. It is
-created on first use, kept for the lifetime of the server (so it is not re-plugged for every press) and
-removed when the server exits. Needs write access to /dev/uinput, which SteamOS grants the desktop user.
+created on first use, kept while presses follow each other (so it is not re-plugged for every press) and
+unplugged after a minute without presses. The kernel also removes it when the server exits, even on a crash.
+Needs write access to /dev/uinput, which SteamOS grants the desktop user.
 """
 import atexit
 import fcntl
 import os
 import struct
+import threading
 import time
 
 EV_SYN, EV_KEY, EV_ABS = 0x00, 0x01, 0x03
@@ -27,8 +29,12 @@ AXES = {0x00: (-32768, 32767), 0x01: (-32768, 32767), 0x03: (-32768, 32767), 0x0
         0x02: (0, 255), 0x05: (0, 255), 0x10: (-1, 1), 0x11: (-1, 1)}
 NAMES = sorted([*BUTTONS, *ALIASES, *DPAD, "lt", "rt"])
 
+IDLE_SECONDS = 60
+
 _fd = None
 _created_at = 0.0
+_idle_timer = None
+_lock = threading.RLock()
 
 
 def _event(fd, etype, code, value):
@@ -67,14 +73,24 @@ def _open():
 
 def close():
     global _fd
-    if _fd is None:
-        return
-    try:
-        fcntl.ioctl(_fd, UI_DEV_DESTROY)
-    except OSError:
-        pass
-    os.close(_fd)
-    _fd = None
+    with _lock:
+        if _fd is None:
+            return
+        try:
+            fcntl.ioctl(_fd, UI_DEV_DESTROY)
+        except OSError:
+            pass
+        os.close(_fd)
+        _fd = None
+
+
+def _unplug_when_idle():
+    global _idle_timer
+    if _idle_timer:
+        _idle_timer.cancel()
+    _idle_timer = threading.Timer(IDLE_SECONDS, close)
+    _idle_timer.daemon = True
+    _idle_timer.start()
 
 
 def _normalize(buttons):
@@ -102,18 +118,24 @@ def press(buttons, hold_ms=120, together=False):
     """Press buttons one after another (or together, e.g. 'lb rb'), like a controller."""
     names = _normalize(buttons)
     hold = max(50, min(int(hold_ms), 3000)) / 1000
-    first_use = _fd is None
-    fd = _open()
-    wait = 1.5 - (time.time() - _created_at)  # a freshly plugged controller is picked up after a moment
-    if wait > 0:
-        time.sleep(wait)
-    groups = [names] if together else [[n] for n in names]
-    for group in groups:
-        for n in group:
-            _set(fd, n, True)
-        time.sleep(hold)
-        for n in group:
-            _set(fd, n, False)
-        time.sleep(0.15)
-    return {"pressed": names, "together": together, "hold_ms": int(hold * 1000),
-            "note": "Virtual controller connected now; it stays until the server exits." if first_use else None}
+    with _lock:
+        if _idle_timer:
+            _idle_timer.cancel()
+        plugged_in = _fd is None
+        fd = _open()
+        wait = 1.5 - (time.time() - _created_at)  # a freshly plugged controller is picked up after a moment
+        if wait > 0:
+            time.sleep(wait)
+        groups = [names] if together else [[n] for n in names]
+        for group in groups:
+            for n in group:
+                _set(fd, n, True)
+            time.sleep(hold)
+            for n in group:
+                _set(fd, n, False)
+            time.sleep(0.15)
+        _unplug_when_idle()
+    result = {"pressed": names, "together": together, "hold_ms": int(hold * 1000)}
+    if plugged_in:
+        result["note"] = f"Virtual controller plugged in; it is unplugged after {IDLE_SECONDS} s without presses."
+    return result

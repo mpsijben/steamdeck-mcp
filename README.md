@@ -286,7 +286,7 @@ uses the same port. Only enable it if you're comfortable with that.
 | FPS measurement | Steam's performance overlay (mangoapp) logs frames to a temporary folder for the measurement; its config file is restored afterwards |
 | Screenshots | `gamescopectl screenshot` (the same capture as the screenshot button) |
 | Keyboard/mouse input | `xdotool` on the Xwayland display of the window gamescope shows in front |
-| Controller buttons | A virtual Xbox 360 controller via Linux `uinput` (SteamOS gives the desktop user access), kept until the server exits |
+| Controller buttons | A virtual Xbox 360 controller via Linux `uinput` (SteamOS gives the desktop user access), unplugged after a minute without presses |
 | GE-Proton, cleanup, logs | Files under `~/.local/share/Steam` and your Steam libraries |
 
 **A note on stability:** `SteamClient` is Steam's internal, undocumented API (the same one Decky Loader plugins

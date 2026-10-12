@@ -12,7 +12,8 @@ Lets an assistant look at and operate a game, so it can tune settings and check 
 - **New (full access):** `press_key`, `type_text` and `click` send keyboard and mouse input to the window in front.
   Clicks use screenshot coordinates and are scaled to the game's own resolution.
 - **New (full access):** `press_button` presses controller buttons through a virtual Xbox controller (uinput),
-  for games and menus that only react to a gamepad.
+  for games and menus that only react to a gamepad. It is unplugged after a minute without presses, and the kernel
+  removes it when the server exits.
 - The server now reports itself as `steamdeck-mcp`.
 
 ## 1.1.1 (2026-10-12)
