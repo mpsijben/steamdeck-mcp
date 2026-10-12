@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 (2026-10-12)
+
+Tested in Game Mode. 54 tools.
 
 - **Fix:** Game Mode screen-off time now sets the value on Steam's Power page (backlight dim) instead of
   Steam's screensaver setting.

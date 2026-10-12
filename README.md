@@ -128,7 +128,7 @@ MCP over stdio works through SSH, so an AI client on your PC can manage the Deck
 
 ## Tools
 
-53 tools. Games can be referred to by appid or by (part of) their name, e.g. `"hades"`.
+54 tools. Games can be referred to by appid or by (part of) their name, e.g. `"hades"`.
 ✏️ = changes something · ⚠️ = destructive, needs `confirm=true` or is clearly marked.
 
 ### Status
