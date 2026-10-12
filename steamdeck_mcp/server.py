@@ -7,6 +7,7 @@ from . import __version__, cdp, display, hardware, maintenance, persist, steam, 
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 
+WAIT = {"type": "integer", "description": "How long to wait for the game to be in front (default 60)."}
 GAME = {"type": ["string", "integer"], "description": "Appid or (part of) the name, e.g. 'Battle.net' or 1086940."}
 
 
@@ -86,8 +87,15 @@ TOOLS = [
           {"watts": {"type": "number"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically)."}}),
     _tool("set_gpu_clock", "Pin the GPU clock (200-1600 MHz), or omit 'mhz' to return to automatic.",
           {"mhz": {"type": "integer"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically)."}}),
-    _tool("set_fps_limit", "Experimental, Game Mode only: frame limit via gamescope (0 = off).",
-          {"fps": {"type": "integer"}}, ["fps"]),
+    _tool("set_fps_limit", "Game Mode only: set Steam's framerate limit (10-90, 0 = off), like the slider in the "
+          "Performance menu. Steam applies it to the app in front: pass 'game' to wait until that game is shown "
+          "(ask the user to switch to it). Goes into the game's own profile if it has one (see set_game_profile).",
+          {"fps": {"type": "integer"}, "game": GAME, "wait_seconds": WAIT}, ["fps"]),
+    _tool("set_game_profile", "Game Mode only: turn Steam's per-game performance profile on or off for a game, "
+          "so its framerate limit, TDP etc. no longer follow the global profile. The game must be running; "
+          "the tool waits until it is in front (ask the user to switch to it).",
+          {"game": GAME, "enabled": {"type": "boolean", "description": "Default true."}, "wait_seconds": WAIT},
+          ["game"]),
     _tool("set_brightness", "Set screen brightness (0-100%).", {"percent": {"type": "number"}}, ["percent"]),
     _tool("set_charge_limit", "Limit battery charging to a percentage (e.g. 80) to reduce battery wear when the "
           "Deck is often plugged in. Omit 'percent' (or use 100) to charge to 100%. In Game Mode the value is also "
@@ -274,7 +282,8 @@ HANDLERS = {
     "stop_game": lambda a: steam.stop_game(a["game"]),
     "set_tdp": lambda a: _persisting(a, "tdp", a.get("watts"), _steam_synced(hardware.set_tdp, steam.sync_tdp)),
     "set_gpu_clock": lambda a: _persisting(a, "gpu_clock", a.get("mhz"), hardware.set_gpu_clock),
-    "set_fps_limit": lambda a: hardware.set_fps_limit(a["fps"]),
+    "set_fps_limit": lambda a: steam.set_fps_limit(a["fps"], a.get("game"), a.get("wait_seconds", 60)),
+    "set_game_profile": lambda a: steam.set_game_profile(a["game"], a.get("enabled", True), a.get("wait_seconds", 60)),
     "set_brightness": lambda a: steam.set_brightness(a["percent"]),
     "power_settings": lambda a: _power_settings(),
     "download_status": lambda a: steam.download_status(),

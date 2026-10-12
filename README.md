@@ -174,7 +174,8 @@ MCP over stdio works through SSH, so an AI client on your PC can manage the Deck
 | `set_gpu_clock` ✏️ | Fixed GPU clock or automatic |
 | `set_charge_limit` ✏️ | Stop charging at e.g. 80% to reduce battery wear |
 | `set_power_option` ✏️ | CPU governor, CPU scheduler (e.g. `lavd`), CPU boost, GPU performance level/profile, fan control, Wi-Fi power saving, HDMI-CEC (options depend on SteamOS version) |
-| `set_fps_limit` ✏️ | Frame limit via gamescope (experimental, Game Mode only) |
+| `set_fps_limit` ✏️ | Steam's framerate limit slider, per game or global (Game Mode only) |
+| `set_game_profile` ✏️ | Turn Steam's per-game performance profile on/off (Game Mode only) |
 | `set_brightness` ✏️ · `set_volume` ✏️ | Screen brightness, volume and mute |
 | `screen_timeouts` · `set_screen_timeout` ✏️ | When the screen turns off / the Deck sleeps when idle, for Desktop Mode (KDE) and Game Mode (Steam), on battery and charger |
 | `persistent_settings` · `forget_persistent_settings` ✏️ | See [Settings that survive a reboot](#settings-that-survive-a-reboot) |

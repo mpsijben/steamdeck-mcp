@@ -7,6 +7,9 @@
 - `screen_timeouts` now also shows the Game Mode values.
 - **Fix:** in Game Mode, `set_tdp` and `set_charge_limit` also store the value in Steam's own settings.
   Before, Steam's Performance and Power pages didn't show it and overrode it as soon as they were touched.
+- **Fix:** `set_fps_limit` now sets Steam's own framerate limit slider (it used a gamescope atom that Steam
+  ignored, on the wrong X display). With `game` it waits until that game is in front and sets its profile.
+- **New:** `set_game_profile` turns Steam's per-game performance profile on or off for a game.
 - **Fix:** `add_shortcut` sets the exe, start dir and launch options explicitly.
 
 ## 1.0.0 (2026-10-11)

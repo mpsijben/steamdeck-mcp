@@ -224,18 +224,3 @@ def _set_gpu_clock_sysfs(mhz):
     _priv_write(od, f"s 1 {mhz}")
     _priv_write(od, "c")
     return gpu_status()
-
-
-def set_fps_limit(fps):
-    """Game Mode only: sets gamescope's frame limiter (0 = off)."""
-    if not is_game_mode():
-        raise RuntimeError("The FPS limit only works in Game Mode (gamescope is not running).")
-    if fps and not 10 <= fps <= 90:
-        raise ValueError("FPS limit must be 0 (off) or between 10 and 90.")
-    env = {**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")}
-    r = subprocess.run(["xprop", "-root", "-f", "GAMESCOPE_FPS_LIMIT", "32c", "-set", "GAMESCOPE_FPS_LIMIT",
-                        str(int(fps or 0))], capture_output=True, text=True, env=env, timeout=10)
-    if r.returncode != 0:
-        raise RuntimeError(f"xprop failed: {r.stderr.strip()}")
-    return {"fps_limit": fps or "off",
-            "note": "Experimental: Steam's own framerate slider can override this."}

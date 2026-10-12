@@ -3,7 +3,7 @@ import json
 import os
 import time
 
-from . import maintenance
+from . import hardware, maintenance
 from .cdp import CDPError, evaluate, set_client_settings
 
 SHORTCUT_TYPE = 1073741824
@@ -11,6 +11,7 @@ SHORTCUT_TYPE = 1073741824
 # Steam client setting field numbers (CMsgClientSettings), taken from Steam's own UI code.
 TDP_LIMIT_ENABLED, TDP_LIMIT = 22001, 22002
 CHARGE_LIMIT_ENABLED, CHARGE_LIMIT = 22011, 22012
+FPS_LIMIT, FPS_LIMIT_DISABLED = 21002, 21004  # gamescope_app_target_framerate, gamescope_disable_framelimit
 TOOL_TYPE = 4
 
 # Waits for app details (compat tool, launch options, size) which Steam loads lazily.
@@ -539,3 +540,50 @@ def sync_charge_limit(percent):
         set_client_settings({CHARGE_LIMIT_ENABLED: 0})
     else:
         set_client_settings({CHARGE_LIMIT_ENABLED: 1, CHARGE_LIMIT: int(percent)})
+
+
+def _wait_for_focus(appid, name, wait_seconds):
+    """Steam's Performance settings apply to its current game (the one last shown in front), so wait for it."""
+    gameid = _js("const a = __ov(ID); return String((a && a.m_gameid) || ID);", ID=appid)
+    deadline = time.time() + wait_seconds
+    while evaluate("String(SystemPerfStore.m_msgState.current_game_id)") != gameid:
+        if time.time() >= deadline:
+            raise RuntimeError(f"{name} was not in front within {wait_seconds} s. Start it, switch to it with the "
+                               "Steam button and try again.")
+        time.sleep(1)
+
+
+def _perf_profile():
+    state = evaluate("""(() => { const s = SystemPerfStore.m_msgState;
+      return {active: String(s.active_profile_game_id), current: String(s.current_game_id)}; })()""")
+    return "game-specific" if state["active"] == state["current"] else "global (shared by games without their own profile)"
+
+
+def _perf_target(game, wait_seconds):
+    if not hardware.is_game_mode():
+        raise RuntimeError("Only works in Game Mode.")
+    if game is None:
+        return None
+    appid, name, _ = resolve_app(game)
+    _wait_for_focus(appid, name, wait_seconds)
+    return name
+
+
+def set_fps_limit(fps, game=None, wait_seconds=60):
+    """Steam's framerate slider in the Performance menu; Steam picks the matching refresh rate itself."""
+    if fps and not 10 <= fps <= 90:
+        raise ValueError("FPS limit must be 0 (off) or between 10 and 90.")
+    name = _perf_target(game, wait_seconds)
+    if fps:
+        set_client_settings({FPS_LIMIT_DISABLED: 0, FPS_LIMIT: int(fps)})
+    else:
+        set_client_settings({FPS_LIMIT_DISABLED: 1})
+    return {"fps_limit": int(fps) if fps else "off", "game": name or "app in front", "profile": _perf_profile()}
+
+
+def set_game_profile(game, enabled=True, wait_seconds=60):
+    """Turn Steam's per-game performance profile on or off for a game."""
+    name = _perf_target(game, wait_seconds)
+    evaluate(f"SystemPerfStore.SetGameSpecificProfileEnabled({'true' if enabled else 'false'})")
+    time.sleep(1)
+    return {"game": name, "profile": _perf_profile()}
