@@ -4,8 +4,8 @@
 
 Lets an assistant look at and operate a game, so it can tune settings and check the result. 61 tools.
 
-- **New: access levels.** `--readonly` (look only), standard (default, as before) and `--full` (adds keyboard and
-  mouse input). Also settable with `STEAMDECK_MCP_LEVEL`. Tools above the chosen level are not offered at all.
+- **New: access levels.** `--readonly` (look only), standard (default, as before) and `--full` (adds keyboard, mouse
+  and controller input). Also settable with `STEAMDECK_MCP_LEVEL`. Tools above the chosen level are not offered at all.
 - **New:** `measure_fps` measures the game in front with Steam's performance overlay logger: average FPS, 1% low,
   frame time, CPU/GPU load, temperatures, power and GPU clock. With `game` it waits until that game is in front.
 - **New:** `screenshot` returns what's on screen as an image (Game Mode, via gamescope).
