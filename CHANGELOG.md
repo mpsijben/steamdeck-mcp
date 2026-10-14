@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.6.0 (2026-10-14)
 
 - **New (full access):** `mouse_move` moves the mouse to a spot or by an amount, spread out like a trackpad swipe
   (e.g. to turn a camera), optionally dragging; `mouse_scroll` scrolls like the left trackpad.
