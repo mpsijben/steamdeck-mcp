@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 1.6.1 (2026-10-14)
 
 - **Fix:** `screenshot` and the mouse tools assumed the Deck's 1280×800 screen. They now use the real screen size,
   so they also work on a TV or monitor (docked Deck, Steam Machine): large screenshots are scaled down to 1280 wide,
   and mouse coordinates are mapped back, including the black bars when a game's aspect ratio differs.
+- README: new section on other SteamOS devices (Steam Machine): what is tested, what differs, and how to help test.
 
 ## 1.6.0 (2026-10-14)
 

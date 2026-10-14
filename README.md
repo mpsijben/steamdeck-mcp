@@ -6,6 +6,10 @@ temperatures, TDP and charge limit, per-game Proton versions, installing and mov
 cleanup and troubleshooting game logs. In Game Mode it can also measure a game's FPS, take screenshots and, if you
 allow it, press keys and click, so an assistant can tune a game's settings and check the result.
 
+Built and tested on the **Steam Deck**. Because it talks to SteamOS and the Steam client rather than to Deck-only
+hardware, it should also work on other SteamOS devices such as the **Steam Machine**; see
+[Other SteamOS devices](#other-steamos-devices).
+
 > *"How much battery do I have left and what's draining it?"*
 > *"Put Cyberpunk on the latest GE-Proton and set my TDP to 10 W."*
 > *"Install Hades on the SD card."*  ·  *"Why won't Hogwarts Legacy start?"*
@@ -28,6 +32,7 @@ allow it, press keys and click, so an assistant can tune a game's settings and c
 - [Access levels](#access-levels)
 - [Tools](#tools)
 - [Optimizing a game](#optimizing-a-game)
+- [Other SteamOS devices](#other-steamos-devices)
 - [Settings that survive a reboot](#settings-that-survive-a-reboot)
 - [Safety](#safety)
 - [How it works](#how-it-works)
@@ -38,7 +43,7 @@ allow it, press keys and click, so an assistant can tune a game's settings and c
 
 | | |
 |---|---|
-| Device | Steam Deck (LCD or OLED) on SteamOS 3.7 or newer. Other SteamOS devices may partly work. |
+| Device | Steam Deck (LCD or OLED) on SteamOS 3.7 or newer. Other SteamOS devices: see [below](#other-steamos-devices). |
 | Python | 3.12+ (SteamOS ships it, nothing to install) |
 | Steam | Running, with the Steam integration enabled for game/Proton tools (one-time step below) |
 
@@ -273,6 +278,31 @@ consent. It ends with a before/after table and an estimate of your playtime.
 
 Works best when you talk to the assistant from your phone (Remote Control), so the game stays in front. On the
 Deck itself the tools wait until you switch to the game.
+
+## Other SteamOS devices
+
+Most tools use SteamOS and the Steam client, not Deck-specific hardware, so they should work on any device running
+SteamOS in Game Mode, such as the Steam Machine or a PC with SteamOS. Status:
+
+| Device | Status |
+|---|---|
+| Steam Deck OLED | Tested |
+| Steam Deck LCD | Expected to work (same software, same power interfaces) |
+| Steam Deck on a TV or monitor | Screenshots and mouse input handle any screen size and black bars; not yet tested on real hardware |
+| Steam Machine | Expected to work, not yet tested |
+
+What differs on a device without a battery or built-in screen: battery status and charge limit are unavailable,
+brightness has nothing to control, and the TDP and GPU clock ranges are whatever SteamOS Manager reports for that
+chip (the tools read them from the device instead of assuming the Deck's).
+
+**Have a Steam Machine or another SteamOS device?** Run the read-only check and
+[open an issue](https://github.com/mpsijben/steamdeck-mcp/issues) with the output:
+
+```bash
+python3 ~/steamdeck-mcp/scripts/smoke_test.py
+```
+
+It only calls tools that read information; nothing is changed.
 
 ## Settings that survive a reboot
 
