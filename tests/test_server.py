@@ -243,6 +243,27 @@ class InputValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             screen.mouse_click(10, 10, button="side")
 
+    def test_click_mapping_on_a_4k_tv_with_black_bars(self):
+        # Screenshot scaled 3840x2160 -> 1280x720; a 1280x800 game is fitted into the 16:9 screen with side bars.
+        saved = dict(screen._shot), screen._focused_window, screen._run
+        screen._shot.update(image=(1280, 720), screen=(3840, 2160))
+        screen._focused_window = lambda: (":1", "42")
+        screen._run = lambda args, display=":0", timeout=10: subprocess.CompletedProcess(
+            args, 0, "WINDOW=42\nX=0\nY=0\nWIDTH=1280\nHEIGHT=800\nSCREEN=0\n", "")
+        try:
+            self.assertEqual(screen._to_window(640, 360)[2:], (640, 400))   # centre stays centre
+            self.assertEqual(screen._to_window(64, 0)[2:], (0, 0))          # inside the left bar -> clamped
+            with self.assertRaises(ValueError):
+                screen._to_window(1280, 10)                                  # outside the 1280x720 image
+        finally:
+            screen._shot.clear(); screen._shot.update(saved[0]); screen._focused_window, screen._run = saved[1], saved[2]
+
+    def test_png_size(self):
+        png = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + (3840).to_bytes(4, "big") + (2160).to_bytes(4, "big")
+        self.assertEqual(screen._png_size(png), (3840, 2160))
+        with self.assertRaises(RuntimeError):
+            screen._png_size(b"not a png at all, nope")
+
     def test_mouse_move_and_scroll_validated(self):
         with self.assertRaises(ValueError):
             screen.mouse_move()                      # neither x/y nor dx/dy

@@ -7,15 +7,49 @@ display, games and apps such as Konsole usually on another.
 import base64
 import os
 import shutil
+import struct
 import subprocess
 import tempfile
 import time
 
 from . import hardware
 
-SCREEN_W, SCREEN_H = 1280, 800  # coordinates used by screenshot() and click()
+MAX_SHOT_W = 1280  # larger screens (TV, Steam Machine) are scaled down so screenshots stay small
 DISPLAYS = (":0", ":1", ":2")
 BUTTONS = {"left": 1, "middle": 2, "right": 3}
+
+
+# Mouse coordinates are in the space of the last screenshot; this maps them back to the real screen.
+_shot = {"image": None, "screen": None}  # (w, h) of the image sent, (w, h) of the screen it was taken from
+
+
+def _png_size(data):
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise RuntimeError("gamescope wrote something that is not a PNG.")
+    return struct.unpack(">II", data[16:24])
+
+
+def _screen_size():
+    """Size of what gamescope shows (internal screen or TV): from the last screenshot, else the root window."""
+    if _shot["screen"]:
+        return _shot["screen"]
+    out = _run(["xdotool", "getdisplaygeometry"]).stdout.split()
+    if len(out) == 2 and all(v.isdigit() for v in out):
+        return int(out[0]), int(out[1])
+    raise RuntimeError("Cannot tell the screen size; take a screenshot first.")
+
+
+def _scale_png(path, width):
+    """Downscale a PNG with ffmpeg (shipped with SteamOS); returns the new bytes or None if not possible."""
+    if not shutil.which("ffmpeg"):
+        return None
+    out = path + ".small.png"
+    r = subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", path, "-vf", f"scale={width}:-2", out],
+                       capture_output=True, timeout=30)
+    if r.returncode != 0 or not os.path.exists(out):
+        return None
+    with open(out, "rb") as f:
+        return f.read()
 
 
 def _need_game_mode():
@@ -49,8 +83,14 @@ def screenshot():
             raise RuntimeError("gamescope did not write a screenshot.")
         with open(path, "rb") as f:
             data = f.read()
+        screen_w, screen_h = _png_size(data)
+        if screen_w > MAX_SHOT_W:
+            data = _scale_png(path, MAX_SHOT_W) or data
+    image_w, image_h = _png_size(data)
+    _shot.update(image=(image_w, image_h), screen=(screen_w, screen_h))
+    scaled = f" (scaled down from {screen_w}x{screen_h})" if (image_w, image_h) != (screen_w, screen_h) else ""
     return {"image": base64.b64encode(data).decode(), "mime": "image/png",
-            "text": f"Screenshot {SCREEN_W}x{SCREEN_H}; click() uses these coordinates."}
+            "text": f"Screenshot {image_w}x{image_h}{scaled}. Mouse tools take x/y in this image's pixels."}
 
 
 def _focused_window():
@@ -101,19 +141,26 @@ SCROLL = {"up": 4, "down": 5, "left": 6, "right": 7}  # X11 wheel buttons
 
 
 def _to_window(x, y):
-    """Screenshot coordinates (1280x800) -> (display, window, window x, window y); games may render at another
-    resolution, so scale to the window's own size."""
-    if not (0 <= x < SCREEN_W and 0 <= y < SCREEN_H):
-        raise ValueError(f"x/y must be within the {SCREEN_W}x{SCREEN_H} screenshot.")
+    """Screenshot coordinates -> (display, window, window x, window y). The screenshot may be scaled down from
+    the real screen, and gamescope fits the window into the screen (black bars when the aspect ratio differs)."""
+    screen_w, screen_h = _screen_size()
+    image_w, image_h = _shot["image"] or (screen_w, screen_h)
+    if not (0 <= x < image_w and 0 <= y < image_h):
+        raise ValueError(f"x/y must be within the {image_w}x{image_h} screenshot.")
+    sx, sy = x * screen_w / image_w, y * screen_h / image_h  # point on the real screen
     display, window = _focused_window()
     geo = _run(["xdotool", "getwindowgeometry", "--shell", window], display).stdout
     vals = dict(line.split("=", 1) for line in geo.split() if "=" in line)
-    w, h = int(vals.get("WIDTH", SCREEN_W)), int(vals.get("HEIGHT", SCREEN_H))
-    return display, window, round(x * w / SCREEN_W), round(y * h / SCREEN_H)
+    w, h = int(vals.get("WIDTH", screen_w)), int(vals.get("HEIGHT", screen_h))
+    scale = min(screen_w / w, screen_h / h)
+    off_x, off_y = (screen_w - w * scale) / 2, (screen_h - h * scale) / 2
+    wx = min(max(round((sx - off_x) / scale), 0), w - 1)
+    wy = min(max(round((sy - off_y) / scale), 0), h - 1)
+    return display, window, wx, wy
 
 
 def mouse_click(x, y, button="left", double=False):
-    """Click at screenshot coordinates (1280x800), scaled to the window in front."""
+    """Click at screenshot coordinates, mapped to the window in front."""
     if button not in BUTTONS:
         raise ValueError(f"button must be one of {', '.join(BUTTONS)}.")
     _, _, wx, wy = _to_window(x, y)

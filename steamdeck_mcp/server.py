@@ -131,8 +131,8 @@ TOOLS = [
           {"clip_id": {"type": "string"}, "path": {"type": "string", "description": "Optional .mp4 path."}}, ["clip_id"]),
     _tool("delete_clip", "Delete a Steam clip to free space (exported MP4 files are kept). Needs confirm=true.",
           {"clip_id": {"type": "string"}, "confirm": {"type": "boolean"}}, ["clip_id"], destructive=True),
-    _tool("screenshot", "Game Mode only: capture what is on screen (game, Steam or app in front) as a 1280x800 "
-          "PNG. Use it to read settings menus or check what a change did.", read_only=True),
+    _tool("screenshot", "Game Mode only: capture what is on screen (game, Steam or app in front) as a PNG "
+          "(at most 1280 wide; a TV picture is scaled down). Use it to read settings menus or check what a change did.", read_only=True),
     _tool("press_key", "Full access only. Press keys in the window in front, like a keyboard: 'Escape', 'Return', "
           "'Up', 'Tab', 'ctrl+s', 'alt+Return' (xdotool key names; space-separated for a sequence). Real input: "
           "take a screenshot first and make sure the right window is in front.",
@@ -153,7 +153,7 @@ TOOLS = [
            "y": {"type": "number"}, "duration_ms": {"type": "integer"}}, level="full"),
     _tool("type_text", "Full access only. Type text into the window in front (max 500 characters). Real input.",
           {"text": {"type": "string"}}, ["text"], level="full"),
-    _tool("mouse_click", "Full access only. Click at x/y in screenshot coordinates (1280x800) in the window in "
+    _tool("mouse_click", "Full access only. Click at x/y in the last screenshot's pixels in the window in "
           "front. Real input: take a screenshot first to find the spot.",
           {"x": {"type": "integer"}, "y": {"type": "integer"},
            "button": {"enum": ["left", "right", "middle"], "description": "Default left."},
