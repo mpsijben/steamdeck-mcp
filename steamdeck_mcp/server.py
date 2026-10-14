@@ -153,12 +153,21 @@ TOOLS = [
            "y": {"type": "number"}, "duration_ms": {"type": "integer"}}, level="full"),
     _tool("type_text", "Full access only. Type text into the window in front (max 500 characters). Real input.",
           {"text": {"type": "string"}}, ["text"], level="full"),
-    _tool("click", "Full access only. Click at x/y in screenshot coordinates (1280x800) in the window in front. "
-          "Real input: take a screenshot first to find the spot.",
+    _tool("mouse_click", "Full access only. Click at x/y in screenshot coordinates (1280x800) in the window in "
+          "front. Real input: take a screenshot first to find the spot.",
           {"x": {"type": "integer"}, "y": {"type": "integer"},
            "button": {"enum": ["left", "right", "middle"], "description": "Default left."},
            "double": {"type": "boolean", "description": "Double-click (default false)."}},
           ["x", "y"], level="full"),
+    _tool("mouse_move", "Full access only. Move the mouse in the window in front, like the right trackpad: to x/y "
+          "(screenshot coordinates) or by dx/dy pixels spread over duration_ms (default 300), e.g. to turn the camera "
+          "in games that use the mouse. drag holds a button while moving (to drag items or a map).",
+          {"x": {"type": "integer"}, "y": {"type": "integer"}, "dx": {"type": "integer"}, "dy": {"type": "integer"},
+           "duration_ms": {"type": "integer"}, "drag": {"enum": ["left", "right", "middle"]}}, level="full"),
+    _tool("mouse_scroll", "Full access only. Scroll like a mouse wheel or the left trackpad: direction up, down, "
+          "left or right, amount notches (default 3), optionally at x/y (screenshot coordinates).",
+          {"direction": {"enum": ["up", "down", "left", "right"]}, "amount": {"type": "integer"},
+           "x": {"type": "integer"}, "y": {"type": "integer"}}, ["direction"], level="full"),
     _tool("set_scaling", "Game Mode only: Steam's scaling settings for the active performance profile, like the "
           "Performance menu. filter: linear, pixel (sharp pixels for pixel art) or sharp (AMD FSR upscaling, use with a "
           "lower in-game resolution for more FPS); sharpness 0-5 for FSR; mode: auto, integer, fit, fill, stretch. "
@@ -400,7 +409,10 @@ HANDLERS = {
     "move_stick": lambda a: gamepad.move_stick(a.get("stick", "left"), a.get("x", 0), a.get("y", 0),
                                                a.get("duration_ms", 500)),
     "type_text": lambda a: screen.type_text(a["text"]),
-    "click": lambda a: screen.click(a["x"], a["y"], a.get("button", "left"), a.get("double", False)),
+    "mouse_click": lambda a: screen.mouse_click(a["x"], a["y"], a.get("button", "left"), a.get("double", False)),
+    "mouse_move": lambda a: screen.mouse_move(a.get("x"), a.get("y"), a.get("dx"), a.get("dy"),
+                                              a.get("duration_ms", 300), a.get("drag")),
+    "mouse_scroll": lambda a: screen.mouse_scroll(a.get("direction", "down"), a.get("amount", 3), a.get("x"), a.get("y")),
     "set_scaling": lambda a: steam.set_scaling(a.get("filter"), a.get("sharpness"), a.get("mode"), a.get("game"),
                                                a.get("wait_seconds", 60)),
     "set_perf_overlay": lambda a: steam.set_perf_overlay(a["level"]),
@@ -482,8 +494,12 @@ def _get_prompt(params):
             "messages": [{"role": "user", "content": {"type": "text", "text": f"{request}.\n\n{text}"}}]}
 
 
+RENAMED = {"click": "mouse_click"}  # old names keep working for existing clients
+
+
 def _call_tool(params):
     name, args = params.get("name"), params.get("arguments") or {}
+    name = RENAMED.get(name, name)
     if name not in HANDLERS or name not in {t["name"] for t in _visible_tools()}:
         hint = "" if name not in HANDLERS else f" at access level '{LEVEL}'"
         return {"content": [{"type": "text", "text": f"Unknown tool: {name}{hint}"}], "isError": True}

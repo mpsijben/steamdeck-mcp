@@ -140,7 +140,7 @@ Pick a level when you register the server by adding a flag to the command (or se
 |---|---|---|
 | Read-only | `--readonly` | Look only: status, games, logs, performance, FPS measurements, screenshots |
 | Standard | *(none)* | Also change settings: TDP, FPS limit, Proton, installs, downloads, power, … |
-| Full | `--full` | Also **keyboard, mouse and controller input** in Game Mode (`press_key`, `type_text`, `click`, `press_button`, `move_stick`), e.g. to change a game's own graphics settings |
+| Full | `--full` | Also **keyboard, mouse and controller input** in Game Mode (`press_key`, `type_text`, `mouse_click`, `mouse_move`, `mouse_scroll`, `press_button`, `move_stick`), e.g. to change a game's own graphics settings |
 
 ```bash
 claude mcp add steamdeck-mcp -s user -- python3 -I /home/deck/steamdeck-mcp/server.py --full
@@ -154,7 +154,7 @@ whatever is in front, so only choose `--full` if you're happy for your assistant
 
 ## Tools
 
-69 tools. Games can be referred to by appid or by (part of) their name, e.g. `"hades"`.
+71 tools. Games can be referred to by appid or by (part of) their name, e.g. `"hades"`.
 ✏️ = changes something · ⚠️ = destructive, needs `confirm=true` or is clearly marked · 🖐️ = keyboard/mouse input,
 only with `--full`.
 
@@ -215,7 +215,8 @@ only with `--full`.
 | `set_scaling` ✏️ | Scaling filter (linear, pixel, sharp = FSR), FSR sharpness and scaling mode, like the Performance menu |
 | `set_perf_overlay` ✏️ | Performance overlay level 0-4, numbered as in the Performance menu |
 | `screenshot` | What's on screen as an image, e.g. to read a game's settings menu |
-| `press_key` 🖐️ · `type_text` 🖐️ · `click` 🖐️ | Keyboard and mouse input in the window in front |
+| `press_key` 🖐️ · `type_text` 🖐️ | Keyboard input in the window in front |
+| `mouse_click` 🖐️ · `mouse_move` 🖐️ · `mouse_scroll` 🖐️ | Click, move or drag (like the right trackpad, e.g. to turn a camera) and scroll (like the left trackpad) |
 | `press_button` 🖐️ · `move_stick` 🖐️ | Controller buttons (A/B/X/Y, bumpers, triggers, d-pad, Menu/View; tap or hold up to 10 s) and analog sticks through a virtual Xbox controller, for games and menus that need a gamepad |
 
 Steam applies performance settings to the game that was last in front. When the assistant runs on the Deck

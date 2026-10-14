@@ -214,7 +214,7 @@ class AccessLevelTests(unittest.TestCase):
         self.assertTrue(call("set_tdp", watts=10)["isError"])
 
     def test_input_tools_only_at_full(self):
-        inputs = {"press_key", "press_button", "move_stick", "type_text", "click"}
+        inputs = {"press_key", "press_button", "move_stick", "type_text", "mouse_click", "mouse_move", "mouse_scroll"}
         self.assertFalse(inputs & self.names("standard"))
         self.assertTrue(inputs <= self.names("full"))
         server.LEVEL = "standard"
@@ -239,9 +239,31 @@ class AccessLevelTests(unittest.TestCase):
 class InputValidationTests(unittest.TestCase):
     def test_click_outside_screen_rejected(self):
         with self.assertRaises(ValueError):
-            screen.click(1280, 10)
+            screen.mouse_click(1280, 10)
         with self.assertRaises(ValueError):
-            screen.click(10, 10, button="side")
+            screen.mouse_click(10, 10, button="side")
+
+    def test_mouse_move_and_scroll_validated(self):
+        with self.assertRaises(ValueError):
+            screen.mouse_move()                      # neither x/y nor dx/dy
+        with self.assertRaises(ValueError):
+            screen.mouse_move(x=10, y=10, dx=5)      # both
+        with self.assertRaises(ValueError):
+            screen.mouse_move(dx=99999)
+        with self.assertRaises(ValueError):
+            screen.mouse_move(dx=10, drag="side")
+        with self.assertRaises(ValueError):
+            screen.mouse_scroll("sideways")
+        with self.assertRaises(ValueError):
+            screen.mouse_scroll("down", amount=0)
+
+    def test_old_click_name_still_works(self):
+        server.LEVEL = "full"
+        try:
+            r = call("click", x=5000, y=1)  # routed to mouse_click, which rejects the coordinates
+            self.assertIn("x/y must be within", r["content"][0]["text"])
+        finally:
+            server.LEVEL = "standard"
 
     def test_controller_buttons_validated(self):
         self.assertEqual(gamepad._normalize("A, start up"), ["a", "menu", "up"])

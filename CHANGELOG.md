@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **New (full access):** `mouse_move` moves the mouse to a spot or by an amount, spread out like a trackpad swipe
+  (e.g. to turn a camera), optionally dragging; `mouse_scroll` scrolls like the left trackpad.
+- `click` is now `mouse_click`; the old name keeps working. 71 tools.
+
 ## 1.5.0 (2026-10-14)
 
 - **Fix:** `measure_fps` returned no data when Steam's performance overlay was off (the default): the overlay
