@@ -237,6 +237,14 @@ class AccessLevelTests(unittest.TestCase):
 
 
 class InputValidationTests(unittest.TestCase):
+    def setUp(self):  # pretend a Deck-sized screenshot was taken, so no X display or xdotool is needed
+        self.saved_shot = dict(screen._shot)
+        screen._shot.update(image=(1280, 800), screen=(1280, 800))
+
+    def tearDown(self):
+        screen._shot.clear()
+        screen._shot.update(self.saved_shot)
+
     def test_click_outside_screen_rejected(self):
         with self.assertRaises(ValueError):
             screen.mouse_click(1280, 10)

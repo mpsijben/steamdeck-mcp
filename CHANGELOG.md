@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.2 (2026-10-14)
+
+- Fix the test suite on machines without `xdotool` (CI): screen tests no longer depend on an X display.
+- Tools that need SteamOS programs now report "not found; this tool needs SteamOS in Game Mode" instead of a raw
+  error when those programs are missing.
+
 ## 1.6.1 (2026-10-14)
 
 - **Fix:** `screenshot` and the mouse tools assumed the Deck's 1280×800 screen. They now use the real screen size,

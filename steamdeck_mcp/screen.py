@@ -59,7 +59,10 @@ def _need_game_mode():
 
 def _run(args, display=":0", timeout=10):
     env = {**os.environ, "DISPLAY": display}
-    return subprocess.run(args, capture_output=True, text=True, env=env, timeout=timeout)
+    try:
+        return subprocess.run(args, capture_output=True, text=True, env=env, timeout=timeout)
+    except FileNotFoundError as e:
+        raise RuntimeError(f"{args[0]} not found; this tool needs SteamOS in Game Mode.") from e
 
 
 def screenshot():

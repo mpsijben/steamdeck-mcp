@@ -37,10 +37,11 @@ def _priv_write(path, value):
 
 
 def is_game_mode():
-    r = subprocess.run(["pgrep", "-x", "gamescope-wl"], capture_output=True)
-    if r.returncode == 0:
-        return True
-    return subprocess.run(["pgrep", "-x", "gamescope"], capture_output=True).returncode == 0
+    try:
+        return any(subprocess.run(["pgrep", "-x", name], capture_output=True).returncode == 0
+                   for name in ("gamescope-wl", "gamescope"))
+    except FileNotFoundError:  # no pgrep: not a SteamOS session
+        return False
 
 
 def _battery():
