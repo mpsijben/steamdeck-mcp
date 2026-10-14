@@ -107,11 +107,12 @@ TOOLS = [
           "(ask the user to switch to it). Goes into the game's own profile if it has one (see set_game_profile).",
           {"fps": {"type": "integer"}, "game": GAME, "wait_seconds": WAIT}, ["fps"]),
     _tool("perf_status", "Game Mode only: the game Steam's Performance settings currently apply to, whether it "
-          "uses its own profile, and its framerate limit. Steam does not expose the measured FPS.", read_only=True),
+          "uses its own profile, its framerate limit, overlay level and scaling settings. Steam does not expose the measured FPS.", read_only=True),
     _tool("measure_fps", "Game Mode only: measure the app in front for N seconds (default 20) with Steam's "
           "performance overlay logger: average FPS, 1% low, frame time, CPU/GPU load, temperatures, power and GPU "
           "clock. Pass 'game' to wait until that game is in front first (ask the user to switch to it and play). "
-          "Use it before and after changing settings to compare.",
+          "Use it before and after changing settings to compare. If the performance overlay is off, a small FPS "
+          "counter is shown during the measurement.",
           {"seconds": {"type": "integer", "description": "5-120, default 20."}, "game": GAME, "wait_seconds": WAIT},
           read_only=True),
     _tool("recording_status", "Steam Game Recording: mode (off/background/manual), how much background video is "
@@ -140,10 +141,16 @@ TOOLS = [
     _tool("press_button", "Full access only. Press controller buttons through a virtual Xbox controller, for "
           "games or menus that need a gamepad: a, b, x, y, lb, rb, lt, rt, menu (start), view (select), guide, ls, rs, "
           "up/down/left/right (d-pad). Space-separated buttons are pressed one after another, or together with "
-          "together=true. The first press connects the controller (games see a second controller).",
+          "together=true. hold_ms (up to 10000) keeps them held, e.g. to sprint. The first press connects the "
+          "controller (games see a second controller).",
           {"buttons": {"type": "string"}, "together": {"type": "boolean", "description": "Press all at once (default false)."},
-           "hold_ms": {"type": "integer", "description": "How long each press lasts (default 120)."}},
+           "hold_ms": {"type": "integer", "description": "How long each press lasts (default 120, max 10000)."}},
           ["buttons"], level="full"),
+    _tool("move_stick", "Full access only. Push an analog stick of the virtual controller: x/y from -1 to 1 (x right, "
+          "y up) for duration_ms (default 500, max 10000), then release. Left stick usually moves, right stick turns "
+          "the camera. Take a screenshot afterwards to see the effect.",
+          {"stick": {"enum": ["left", "right"], "description": "Default left."}, "x": {"type": "number"},
+           "y": {"type": "number"}, "duration_ms": {"type": "integer"}}, level="full"),
     _tool("type_text", "Full access only. Type text into the window in front (max 500 characters). Real input.",
           {"text": {"type": "string"}}, ["text"], level="full"),
     _tool("click", "Full access only. Click at x/y in screenshot coordinates (1280x800) in the window in front. "
@@ -152,6 +159,15 @@ TOOLS = [
            "button": {"enum": ["left", "right", "middle"], "description": "Default left."},
            "double": {"type": "boolean", "description": "Double-click (default false)."}},
           ["x", "y"], level="full"),
+    _tool("set_scaling", "Game Mode only: Steam's scaling settings for the active performance profile, like the "
+          "Performance menu. filter: linear, pixel (sharp pixels for pixel art) or sharp (AMD FSR upscaling, use with a "
+          "lower in-game resolution for more FPS); sharpness 0-5 for FSR; mode: auto, integer, fit, fill, stretch. "
+          "Pass 'game' to wait until that game is in front.",
+          {"filter": {"enum": ["linear", "pixel", "sharp"]}, "sharpness": {"type": "integer"},
+           "mode": {"enum": ["auto", "integer", "fit", "fill", "stretch"]}, "game": GAME, "wait_seconds": WAIT}),
+    _tool("set_perf_overlay", "Game Mode only: Steam's performance overlay level as numbered in the Performance "
+          "menu: 0 off, 1 FPS counter only, 2-4 more detail (CPU/GPU, temperatures, power, frame times).",
+          {"level": {"type": "integer"}}, ["level"]),
     _tool("set_game_profile", "Game Mode only: turn Steam's per-game performance profile on or off for a game, "
           "so its framerate limit, TDP etc. no longer follow the global profile. The game must be running; "
           "the tool waits until it is in front (ask the user to switch to it).",
@@ -326,8 +342,17 @@ def _set_tdp(args):
 
 def _measure_fps(seconds, game, wait_seconds):
     name = steam._perf_target(game, wait_seconds) if game is not None else None
-    result = fps.measure(seconds)
-    return {"game": name or "app in front", **result}
+    # mangoapp only handles frames while the overlay is shown, so show the FPS counter during the measurement.
+    overlay_was_off = steam._perf_view(steam._perf_state())["overlay_level"] == 0
+    if overlay_was_off:
+        steam.set_perf_overlay(1)
+    try:
+        result = fps.measure(seconds)
+    finally:
+        if overlay_was_off:
+            steam.set_perf_overlay(0)
+    note = {"note": "The FPS counter was shown during the measurement and is off again."} if overlay_was_off else {}
+    return {"game": name or "app in front", **result, **note}
 
 
 def _remove_proton(name):
@@ -372,8 +397,13 @@ HANDLERS = {
     "screenshot": lambda a: screen.screenshot(),
     "press_key": lambda a: screen.press_key(a["keys"], a.get("repeat", 1)),
     "press_button": lambda a: gamepad.press(a["buttons"], a.get("hold_ms", 120), a.get("together", False)),
+    "move_stick": lambda a: gamepad.move_stick(a.get("stick", "left"), a.get("x", 0), a.get("y", 0),
+                                               a.get("duration_ms", 500)),
     "type_text": lambda a: screen.type_text(a["text"]),
     "click": lambda a: screen.click(a["x"], a["y"], a.get("button", "left"), a.get("double", False)),
+    "set_scaling": lambda a: steam.set_scaling(a.get("filter"), a.get("sharpness"), a.get("mode"), a.get("game"),
+                                               a.get("wait_seconds", 60)),
+    "set_perf_overlay": lambda a: steam.set_perf_overlay(a["level"]),
     "set_game_profile": lambda a: steam.set_game_profile(a["game"], a.get("enabled", True), a.get("wait_seconds", 60)),
     "set_brightness": lambda a: steam.set_brightness(a["percent"]),
     "power_settings": lambda a: _power_settings(),

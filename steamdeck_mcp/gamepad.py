@@ -114,18 +114,35 @@ def _set(fd, name, pressed):
     _event(fd, EV_SYN, SYN_REPORT, 0)
 
 
+STICKS = {"left": (0x00, 0x01), "right": (0x03, 0x04)}  # ABS_X/ABS_Y, ABS_RX/ABS_RY
+MAX_HOLD_MS = 10000
+
+
+def _ready():
+    """The controller's fd, plugged in long enough for games to have noticed it; returns (fd, plugged_in_now)."""
+    if _idle_timer:
+        _idle_timer.cancel()
+    plugged_in = _fd is None
+    fd = _open()
+    wait = 1.5 - (time.time() - _created_at)  # a freshly plugged controller is picked up after a moment
+    if wait > 0:
+        time.sleep(wait)
+    return fd, plugged_in
+
+
+def _plug_note(result, plugged_in):
+    if plugged_in:
+        result["note"] = f"Virtual controller plugged in; it is unplugged after {IDLE_SECONDS} s without presses."
+    return result
+
+
 def press(buttons, hold_ms=120, together=False):
-    """Press buttons one after another (or together, e.g. 'lb rb'), like a controller."""
+    """Press buttons one after another (or together, e.g. 'lb rb'), like a controller. hold_ms up to 10 s
+    holds a button down, e.g. to sprint or charge an attack."""
     names = _normalize(buttons)
-    hold = max(50, min(int(hold_ms), 3000)) / 1000
+    hold = max(50, min(int(hold_ms), MAX_HOLD_MS)) / 1000
     with _lock:
-        if _idle_timer:
-            _idle_timer.cancel()
-        plugged_in = _fd is None
-        fd = _open()
-        wait = 1.5 - (time.time() - _created_at)  # a freshly plugged controller is picked up after a moment
-        if wait > 0:
-            time.sleep(wait)
+        fd, plugged_in = _ready()
         groups = [names] if together else [[n] for n in names]
         for group in groups:
             for n in group:
@@ -135,7 +152,27 @@ def press(buttons, hold_ms=120, together=False):
                 _set(fd, n, False)
             time.sleep(0.15)
         _unplug_when_idle()
-    result = {"pressed": names, "together": together, "hold_ms": int(hold * 1000)}
-    if plugged_in:
-        result["note"] = f"Virtual controller plugged in; it is unplugged after {IDLE_SECONDS} s without presses."
-    return result
+    return _plug_note({"pressed": names, "together": together, "hold_ms": int(hold * 1000)}, plugged_in)
+
+
+def move_stick(stick="left", x=0.0, y=0.0, duration_ms=500):
+    """Push an analog stick: x/y from -1 to 1 (x right, y up), held for duration_ms, then back to center.
+    Left stick usually moves the character, right stick the camera."""
+    if stick not in STICKS:
+        raise ValueError("stick must be 'left' or 'right'.")
+    x, y = float(x), float(y)
+    if not (-1 <= x <= 1 and -1 <= y <= 1):
+        raise ValueError("x and y must be between -1 and 1.")
+    hold = max(50, min(int(duration_ms), MAX_HOLD_MS)) / 1000
+    code_x, code_y = STICKS[stick]
+    with _lock:
+        fd, plugged_in = _ready()
+        _event(fd, EV_ABS, code_x, round(x * 32767))
+        _event(fd, EV_ABS, code_y, round(-y * 32767))  # evdev's Y axis points down
+        _event(fd, EV_SYN, SYN_REPORT, 0)
+        time.sleep(hold)
+        _event(fd, EV_ABS, code_x, 0)
+        _event(fd, EV_ABS, code_y, 0)
+        _event(fd, EV_SYN, SYN_REPORT, 0)
+        _unplug_when_idle()
+    return _plug_note({"stick": stick, "x": x, "y": y, "duration_ms": int(hold * 1000)}, plugged_in)

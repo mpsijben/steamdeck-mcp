@@ -69,7 +69,9 @@ access level (input tools). Ask first, and tell the user what you'll change.
    (Escape). Prefer controller buttons; many games are made for them.
 2. Change one setting at a time (resolution scale/FSR, shadows, effects first), take a `screenshot` to
    confirm, return to gameplay, and measure again.
-3. Never change account, online, purchase or save/load options. If something unexpected appears, stop and ask.
+3. A strong option on the Deck: lower the in-game resolution (e.g. to 960×600 or 1024×640) and turn on FSR with
+   `set_scaling` (`filter: sharp`, `sharpness` 2-3). Steam then upscales to the screen; measure the gain.
+4. Never change account, online, purchase or save/load options. If something unexpected appears, stop and ask.
 
 ## 6. Finish
 

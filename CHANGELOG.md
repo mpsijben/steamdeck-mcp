@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.0 (2026-10-14)
+
+- **Fix:** `measure_fps` returned no data when Steam's performance overlay was off (the default): the overlay
+  only processes frames while shown. It now shows the FPS counter during the measurement and turns it off again.
+- **New:** `set_scaling` sets Steam's scaling filter (linear, pixel, sharp = FSR), FSR sharpness and scaling mode.
+- **New:** `set_perf_overlay` sets the performance overlay level, numbered as in Steam's Performance menu.
+- **New (full access):** `move_stick` pushes an analog stick of the virtual controller; `press_button` can hold
+  buttons for up to 10 seconds.
+- `perf_status` also shows the overlay level and scaling settings. The optimize-game method can now try FSR.
+- 69 tools.
+
 ## 1.4.0 (2026-10-12)
 
 - **New: Steam Game Recording.** `recording_status`, `set_recording` (off / background / manual, how long to keep,

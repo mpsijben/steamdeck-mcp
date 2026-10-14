@@ -13,6 +13,12 @@ SHORTCUT_TYPE = 1073741824
 TDP_LIMIT_ENABLED, TDP_LIMIT = 22001, 22002
 CHARGE_LIMIT_ENABLED, CHARGE_LIMIT = 22011, 22012
 FPS_LIMIT, FPS_LIMIT_DISABLED = 21002, 21004  # gamescope_app_target_framerate, gamescope_disable_framelimit
+# CMsgSystemPerfSettings fields (Steam's Performance menu), from Steam's UI code.
+PERF_OVERLAY_LEVEL = 5  # global
+PERF_FSR_SHARPNESS, PERF_GAME_PROFILE, PERF_SCALING_FILTER, PERF_SCALING_MODE = 9, 14, 24, 25  # per app
+SCALING_FILTERS = {"linear": 1, "pixel": 2, "sharp": 3}  # "sharp" is FSR
+SCALING_MODES = {"auto": 1, "integer": 2, "fit": 3, "fill": 4, "stretch": 5}
+OVERLAY_LEVELS = {0: 0, 1: 4, 2: 1, 3: 2, 4: 3}  # menu level -> Steam's value
 TOOL_TYPE = 4
 
 # Waits for app details (compat tool, launch options, size) which Steam loads lazily.
@@ -554,7 +560,20 @@ def _perf_state():
     if not raw:
         raise RuntimeError("Steam did not report its performance state.")
     fields = decode_fields(base64.b64decode(raw))
-    return {"current": str(fields.get(3, [0])[0]), "active": str(fields.get(4, [0])[0])}
+    settings = decode_fields(fields.get(2, [b""])[0])  # CMsgSystemPerfSettings: 1 = global, 2 = per app
+    return {"current": str(fields.get(3, [0])[0]), "active": str(fields.get(4, [0])[0]),
+            "global": decode_fields(settings.get(1, [b""])[0]), "per_app": decode_fields(settings.get(2, [b""])[0])}
+
+
+def _perf_update(gameid, scope, values):
+    """Send a CMsgSystemPerfUpdateSettings like Steam's Performance menu: values {field: int} go into
+    settings_delta.global (scope 1) or settings_delta.per_app (scope 2) of the given game's profile."""
+    inner = b"".join(varint(n << 3) + varint(int(v)) for n, v in values.items())
+    delta = varint(scope << 3 | 2) + varint(len(inner)) + inner
+    gid = str(gameid).encode()
+    msg = varint(1 << 3 | 2) + varint(len(gid)) + gid + varint(3 << 3 | 2) + varint(len(delta)) + delta
+    payload = base64.b64encode(msg).decode()
+    evaluate(f'(async () => {{ await SteamClient.System.Perf.UpdateSettings("{payload}"); return true; }})()')
 
 
 def _gameid(appid):
@@ -606,6 +625,7 @@ def perf_status():
                               else "global",
             "current_game_has_own_profile": own,
             "fps_limit": None if limit is None else ("off" if limit["off"] else limit["fps"]),
+            **_perf_view(state),
             "note": "fps_limit is the active profile's limit from Steam's Performance menu. Steam does not expose "
                     "the measured FPS."}
 
@@ -626,11 +646,53 @@ def set_fps_limit(fps, game=None, wait_seconds=60):
 def set_game_profile(game, enabled=True, wait_seconds=60):
     """Turn Steam's per-game performance profile on or off for a game, as the Performance menu toggle does."""
     name = _perf_target(game, wait_seconds)
-    gameid = _perf_state()["current"].encode()
-    per_app = varint(14 << 3) + varint(1 if enabled else 0)  # is_game_perf_profile_enabled
-    delta = varint(2 << 3 | 2) + varint(len(per_app)) + per_app  # settings_delta.per_app
-    msg = varint(1 << 3 | 2) + varint(len(gameid)) + gameid + varint(3 << 3 | 2) + varint(len(delta)) + delta
-    payload = base64.b64encode(msg).decode()
-    evaluate(f'(async () => {{ await SteamClient.System.Perf.UpdateSettings("{payload}"); return true; }})()')
+    _perf_update(_perf_state()["current"], 2, {PERF_GAME_PROFILE: 1 if enabled else 0})
     time.sleep(1)
     return {"game": name, "profile": _profile_label(_perf_state())}
+
+
+def set_scaling(filter=None, sharpness=None, mode=None, game=None, wait_seconds=60):
+    """Steam's scaling filter (linear, pixel, sharp = FSR), sharpness and scaling mode for the active profile."""
+    values = {}
+    if filter is not None:
+        if filter not in SCALING_FILTERS:
+            raise ValueError(f"filter must be one of {', '.join(SCALING_FILTERS)}.")
+        values[PERF_SCALING_FILTER] = SCALING_FILTERS[filter]
+    if sharpness is not None:
+        if not 0 <= int(sharpness) <= 5:
+            raise ValueError("sharpness must be 0-5 (as on Steam's slider).")
+        values[PERF_FSR_SHARPNESS] = int(sharpness)
+    if mode is not None:
+        if mode not in SCALING_MODES:
+            raise ValueError(f"mode must be one of {', '.join(SCALING_MODES)}.")
+        values[PERF_SCALING_MODE] = SCALING_MODES[mode]
+    if not values:
+        raise ValueError("Pass filter, sharpness and/or mode.")
+    name = _perf_target(game, wait_seconds)
+    _perf_update(_perf_state()["active"], 2, values)
+    time.sleep(1)
+    return {"game": name or "app in front", **_perf_view(_perf_state())}
+
+
+def set_perf_overlay(level):
+    """Steam's performance overlay level as numbered in the Performance menu: 0 = off, 1 = FPS only ... 4 = full."""
+    level = int(level)
+    if level not in OVERLAY_LEVELS:
+        raise ValueError("level must be 0 (off) to 4, as in Steam's Performance menu.")
+    if not hardware.is_game_mode():
+        raise RuntimeError("Only works in Game Mode.")
+    _perf_update(_perf_state()["active"], 1, {PERF_OVERLAY_LEVEL: OVERLAY_LEVELS[level]})
+    time.sleep(1)
+    return _perf_view(_perf_state())
+
+
+def _perf_view(state):
+    """Readable overlay and scaling settings from a _perf_state()."""
+    def name_of(mapping, value):
+        return {v: k for k, v in mapping.items()}.get(value, value)
+    per_app = {k: v[0] for k, v in state["per_app"].items() if isinstance(v[0], int)}
+    overlay = state["global"].get(PERF_OVERLAY_LEVEL, [0])[0]
+    return {"overlay_level": name_of(OVERLAY_LEVELS, overlay),
+            "scaling_filter": name_of(SCALING_FILTERS, per_app.get(PERF_SCALING_FILTER)),
+            "fsr_sharpness": per_app.get(PERF_FSR_SHARPNESS),
+            "scaling_mode": name_of(SCALING_MODES, per_app.get(PERF_SCALING_MODE))}

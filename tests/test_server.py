@@ -214,7 +214,7 @@ class AccessLevelTests(unittest.TestCase):
         self.assertTrue(call("set_tdp", watts=10)["isError"])
 
     def test_input_tools_only_at_full(self):
-        inputs = {"press_key", "press_button", "type_text", "click"}
+        inputs = {"press_key", "press_button", "move_stick", "type_text", "click"}
         self.assertFalse(inputs & self.names("standard"))
         self.assertTrue(inputs <= self.names("full"))
         server.LEVEL = "standard"
@@ -249,6 +249,28 @@ class InputValidationTests(unittest.TestCase):
             gamepad._normalize("a jump")
         with self.assertRaises(ValueError):
             gamepad._normalize("")
+
+    def test_stick_values_validated(self):
+        with self.assertRaises(ValueError):
+            gamepad.move_stick("middle")
+        with self.assertRaises(ValueError):
+            gamepad.move_stick("left", x=1.5)
+
+    def test_scaling_and_overlay_validated(self):
+        from steamdeck_mcp import steam
+        with self.assertRaises(ValueError):
+            steam.set_scaling(filter="fsr")
+        with self.assertRaises(ValueError):
+            steam.set_scaling(sharpness=9)
+        with self.assertRaises(ValueError):
+            steam.set_scaling()
+        with self.assertRaises(ValueError):
+            steam.set_perf_overlay(5)
+
+    def test_overlay_levels_follow_steam_menu(self):
+        from steamdeck_mcp import steam
+        # Steam stores "1" (FPS only) as 4 and shifts the rest down by one.
+        self.assertEqual(steam.OVERLAY_LEVELS, {0: 0, 1: 4, 2: 1, 3: 2, 4: 3})
 
     def test_uinput_structs_match_kernel_sizes(self):
         import struct
