@@ -288,7 +288,7 @@ SteamOS in Game Mode, such as the Steam Machine or a PC with SteamOS. Status:
 |---|---|
 | Steam Deck OLED | Tested |
 | Steam Deck LCD | Expected to work (same software, same power interfaces) |
-| Steam Deck on a TV or monitor | Screenshots and mouse input handle any screen size and black bars; not yet tested on real hardware |
+| Steam Deck on a TV or monitor | Tested on a 2560×1440 monitor over DisplayPort: all read-only tools, screenshots (scaled down), mouse clicks, FPS limit and measurement. Steam keeps a separate FPS limit for external screens; the tools set the one in use |
 | Steam Machine | Expected to work, not yet tested |
 
 What differs on a device without a battery or built-in screen: battery status and charge limit are unavailable,
