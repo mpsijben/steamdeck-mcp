@@ -18,12 +18,18 @@ LEVELS = ("readonly", "standard", "full")
 LEVEL = "standard"
 
 
-def _tool(name, description, props=None, required=(), read_only=False, destructive=False, level=None):
+def _tool(name, description, props=None, required=(), read_only=False, destructive=False, idempotent=None,
+          open_world=False, level=None):
+    # All four MCP hints are always set explicitly; some directories reject tools that leave one out.
+    # idempotent: calling again with the same arguments has no further effect (always true for read-only tools).
+    # open_world: talks to something outside the Deck (GitHub, Steam's servers).
     return {
         "name": name,
         "description": description,
         "inputSchema": {"type": "object", "properties": props or {}, "required": list(required)},
-        "annotations": {"readOnlyHint": read_only, "destructiveHint": destructive},
+        "annotations": {"readOnlyHint": read_only, "destructiveHint": destructive,
+                        "idempotentHint": read_only if idempotent is None else idempotent,
+                        "openWorldHint": open_world},
         "_level": level or ("readonly" if read_only else "standard"),
     }
 
@@ -39,7 +45,7 @@ TOOLS = [
           "and reachable. Game/Proton tools need it; hardware and file tools do not.", read_only=True),
     _tool("enable_steam_integration", "Enable the Steam client integration by creating "
           "~/.steam/steam/.cef-enable-remote-debugging (the same thing Decky Loader does). Steam must be restarted "
-          "afterwards. The debugger only listens on 127.0.0.1."),
+          "afterwards. The debugger only listens on 127.0.0.1.", idempotent=True),
     # --- info ---
     _tool("system_status", "Steam Deck overview: model, SteamOS version, Game/Desktop Mode, battery, temperatures, "
           "fan, TDP and power draw, GPU, memory and free disk space.", read_only=True),
@@ -54,9 +60,9 @@ TOOLS = [
           {"game": GAME}, read_only=True),
     _tool("list_proton_installs", "Installed Proton versions (official and custom/GE) and which games use them.",
           read_only=True),
-    _tool("check_ge_proton", "Latest GE-Proton release on GitHub and whether it is installed.", read_only=True),
+    _tool("check_ge_proton", "Latest GE-Proton release on GitHub and whether it is installed.", read_only=True, open_world=True),
     _tool("check_os_updates", "Check for SteamOS/Steam client updates and show the current update branch.",
-          read_only=True),
+          read_only=True, open_world=True),
     _tool("cleanup_report", "Find orphaned Proton prefixes and shader caches of games that are no longer installed, "
           "with sizes. Deletes nothing.", read_only=True),
     _tool("find_game_logs", "Find recent log files for a game (inside its Proton prefix, plus ~/steam-<appid>.log).",
@@ -89,23 +95,23 @@ TOOLS = [
     # --- actions ---
     _tool("set_compat_tool", "Set the Proton version for a game. Use a 'name' from list_compat_tools "
           "(e.g. 'proton_experimental', 'GE-Proton10-20'); empty string = Steam default.",
-          {"game": GAME, "tool": {"type": "string"}}, ["game", "tool"]),
+          {"game": GAME, "tool": {"type": "string"}}, ["game", "tool"], idempotent=True),
     _tool("set_launch_options", "Set launch options for a game (e.g. 'PROTON_LOG=1 %command%'). "
-          "Empty string clears them.", {"game": GAME, "options": {"type": "string"}}, ["game", "options"]),
+          "Empty string clears them.", {"game": GAME, "options": {"type": "string"}}, ["game", "options"], idempotent=True),
     _tool("launch_game", "Launch a game.", {"game": GAME}, ["game"]),
     _tool("stop_game", "Force-quit a running game (unsaved progress is lost).",
-          {"game": GAME}, ["game"], destructive=True),
+          {"game": GAME}, ["game"], destructive=True, idempotent=True),
     _tool("set_tdp", "Set the TDP limit (3-15 W). Lower = longer battery life and cooler. Omit 'watts' to "
           "restore the default. In Game Mode the value is also stored in Steam's active performance profile, so its "
           "slider shows it; pass 'game' to wait until that game is in front so it lands in the game's profile.",
           {"watts": {"type": "number"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically). Not with 'game'."},
-           "game": GAME, "wait_seconds": WAIT}),
+           "game": GAME, "wait_seconds": WAIT}, idempotent=True),
     _tool("set_gpu_clock", "Pin the GPU clock (200-1600 MHz), or omit 'mhz' to return to automatic.",
-          {"mhz": {"type": "integer"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically)."}}),
+          {"mhz": {"type": "integer"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically)."}}, idempotent=True),
     _tool("set_fps_limit", "Game Mode only: set Steam's framerate limit (10-90, 0 = off), like the slider in the "
           "Performance menu. Steam applies it to the app in front: pass 'game' to wait until that game is shown "
           "(ask the user to switch to it). Goes into the game's own profile if it has one (see set_game_profile).",
-          {"fps": {"type": "integer"}, "game": GAME, "wait_seconds": WAIT}, ["fps"]),
+          {"fps": {"type": "integer"}, "game": GAME, "wait_seconds": WAIT}, ["fps"], idempotent=True),
     _tool("perf_status", "Game Mode only: the game Steam's Performance settings currently apply to, whether it "
           "uses its own profile, its framerate limit, overlay level and scaling settings. Steam does not expose the measured FPS.", read_only=True),
     _tool("measure_fps", "Game Mode only: measure the app in front for N seconds (default 20) with Steam's "
@@ -122,7 +128,7 @@ TOOLS = [
           "or manual. keep_minutes: how much background video to keep (10-1440). quality: low, medium, standard, "
           "high. If background recording doesn't start, restart Steam once.",
           {"mode": {"enum": list(recording.MODES)}, "keep_minutes": {"type": "integer"},
-           "quality": {"enum": list(recording.QUALITIES)}}),
+           "quality": {"enum": list(recording.QUALITIES)}}, idempotent=True),
     _tool("save_clip", "Save the last N seconds (default 30) of the background recording as a Steam clip, like the "
           "clip button. Needs background recording on and a game running.",
           {"seconds": {"type": "integer", "description": "5-600, default 30."}, "name": {"type": "string"}}),
@@ -130,7 +136,7 @@ TOOLS = [
           "(usually ~/Videos), e.g. to share it.",
           {"clip_id": {"type": "string"}, "path": {"type": "string", "description": "Optional .mp4 path."}}, ["clip_id"]),
     _tool("delete_clip", "Delete a Steam clip to free space (exported MP4 files are kept). Needs confirm=true.",
-          {"clip_id": {"type": "string"}, "confirm": {"type": "boolean"}}, ["clip_id"], destructive=True),
+          {"clip_id": {"type": "string"}, "confirm": {"type": "boolean"}}, ["clip_id"], destructive=True, idempotent=True),
     _tool("screenshot", "Game Mode only: capture what is on screen (game, Steam or app in front) as a PNG "
           "(at most 1280 wide; a TV picture is scaled down). Use it to read settings menus or check what a change did.", read_only=True),
     _tool("press_key", "Full access only. Press keys in the window in front, like a keyboard: 'Escape', 'Return', "
@@ -173,20 +179,20 @@ TOOLS = [
           "lower in-game resolution for more FPS); sharpness 0-5 for FSR; mode: auto, integer, fit, fill, stretch. "
           "Pass 'game' to wait until that game is in front.",
           {"filter": {"enum": ["linear", "pixel", "sharp"]}, "sharpness": {"type": "integer"},
-           "mode": {"enum": ["auto", "integer", "fit", "fill", "stretch"]}, "game": GAME, "wait_seconds": WAIT}),
+           "mode": {"enum": ["auto", "integer", "fit", "fill", "stretch"]}, "game": GAME, "wait_seconds": WAIT}, idempotent=True),
     _tool("set_perf_overlay", "Game Mode only: Steam's performance overlay level as numbered in the Performance "
           "menu: 0 off, 1 FPS counter only, 2-4 more detail (CPU/GPU, temperatures, power, frame times).",
-          {"level": {"type": "integer"}}, ["level"]),
+          {"level": {"type": "integer"}}, ["level"], idempotent=True),
     _tool("set_game_profile", "Game Mode only: turn Steam's per-game performance profile on or off for a game, "
           "so its framerate limit, TDP etc. no longer follow the global profile. The game must be running; "
           "the tool waits until it is in front (ask the user to switch to it).",
           {"game": GAME, "enabled": {"type": "boolean", "description": "Default true."}, "wait_seconds": WAIT},
-          ["game"]),
-    _tool("set_brightness", "Set screen brightness (0-100%).", {"percent": {"type": "number"}}, ["percent"]),
+          ["game"], idempotent=True),
+    _tool("set_brightness", "Set screen brightness (0-100%).", {"percent": {"type": "number"}}, ["percent"], idempotent=True),
     _tool("set_charge_limit", "Limit battery charging to a percentage (e.g. 80) to reduce battery wear when the "
           "Deck is often plugged in. Omit 'percent' (or use 100) to charge to 100%. In Game Mode the value is also "
           "stored in Steam's Power settings.",
-          {"percent": {"type": "integer"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically)."}}),
+          {"percent": {"type": "integer"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically)."}}, idempotent=True),
     _tool("set_power_option", "Change a SteamOS power setting. Options: cpu_governor (powersave/performance), "
           "cpu_scheduler (e.g. none/lavd), cpu_boost (number), gpu_performance_level (auto/low/high/manual/"
           "profile_peak), gpu_power_profile, fan_control (os/bios), wifi_power_management (enabled/disabled), "
@@ -194,7 +200,7 @@ TOOLS = [
           "version. "
           "See power_settings for the values this Deck supports.",
           {"option": {"enum": list(steamos_manager.OPTIONS)}, "value": {"type": "string"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically)."}},
-          ["option", "value"]),
+          ["option", "value"], idempotent=True),
     _tool("screen_timeouts", "When the screen turns off and the Deck goes to sleep when idle, in Desktop Mode "
           "(KDE) and Game Mode (Steam) per power source.", read_only=True),
     _tool("set_screen_timeout", "Set after how many idle minutes the screen turns off and/or the Deck sleeps. "
@@ -202,38 +208,38 @@ TOOLS = [
           "charger or both. Settings are saved by KDE/Steam and survive reboots.",
           {"screen_minutes": {"type": "number"}, "sleep_minutes": {"type": "number"},
            "mode": {"enum": ["both", "desktop", "game"], "description": "Default both."},
-           "power_source": {"enum": ["both", "battery", "ac"], "description": "Default both."}}),
+           "power_source": {"enum": ["both", "battery", "ac"], "description": "Default both."}}, idempotent=True),
     _tool("persistent_settings", "Settings saved with persist=true, which are re-applied after every reboot, and "
           "whether the restore timer is active.", read_only=True),
     _tool("forget_persistent_settings", "Stop re-applying saved settings after reboot. Pass setting keys from "
           "persistent_settings (e.g. 'charge_limit', 'tdp', 'option:cpu_governor') or ['all'].",
-          {"keys": {"type": "array", "items": {"type": "string"}}}, ["keys"]),
+          {"keys": {"type": "array", "items": {"type": "string"}}}, ["keys"], idempotent=True),
     _tool("set_volume", "Set the output volume (0-100%) and/or mute.",
-          {"percent": {"type": "number"}, "muted": {"type": "boolean"}}),
+          {"percent": {"type": "number"}, "muted": {"type": "boolean"}}, idempotent=True),
     _tool("bluetooth_connect", "Connect or disconnect a paired Bluetooth device by name or MAC address.",
           {"device": {"type": "string"}, "connect": {"type": "boolean", "description": "false = disconnect."}},
-          ["device"]),
+          ["device"], idempotent=True),
     _tool("set_airplane_mode", "Turn airplane mode on/off (disables Wi-Fi and Bluetooth; a remote/SSH MCP "
-          "connection will drop).", {"enabled": {"type": "boolean"}}, ["enabled"]),
-    _tool("set_downloads_paused", "Pause or resume all Steam downloads.", {"paused": {"type": "boolean"}}, ["paused"]),
-    _tool("update_game", "Queue a Steam game update and start it.", {"game": GAME}, ["game"]),
+          "connection will drop).", {"enabled": {"type": "boolean"}}, ["enabled"], idempotent=True),
+    _tool("set_downloads_paused", "Pause or resume all Steam downloads.", {"paused": {"type": "boolean"}}, ["paused"], idempotent=True),
+    _tool("update_game", "Queue a Steam game update and start it.", {"game": GAME}, ["game"], open_world=True),
     _tool("verify_game", "Verify a Steam game's files and re-download broken ones (fixes many crashes).",
-          {"game": GAME}, ["game"]),
+          {"game": GAME}, ["game"], open_world=True),
     _tool("install_game", "Install an owned Steam game on 'internal' or 'sdcard' (default: Steam's default "
           "library). dry_run=true only reports the download size. If the game has a license agreement (EULA), the "
           "install window is left open for the user, unless accept_eula=true. Only set accept_eula=true when the "
           "user explicitly asked to accept license agreements automatically.",
           {"game": GAME, "location": {"type": "string"}, "dry_run": {"type": "boolean"},
            "accept_eula": {"type": "boolean", "description": "Accept the game's EULA(s) on the user's behalf. "
-                           "Only when the user explicitly asked for it."}}, ["game"]),
+                           "Only when the user explicitly asked for it."}}, ["game"], open_world=True),
     _tool("uninstall_game", "Uninstall a Steam game. Deletes its files and Proton prefix; local saves without "
           "Steam Cloud can be lost (the tool warns). Requires confirm=true.",
-          {"game": GAME, "confirm": {"type": "boolean"}}, ["game", "confirm"], destructive=True),
+          {"game": GAME, "confirm": {"type": "boolean"}}, ["game", "confirm"], destructive=True, idempotent=True),
     _tool("move_game", "Move an installed Steam game between internal storage and the microSD card.",
           {"game": GAME, "location": {"type": "string", "description": "'internal', 'sdcard' or a library index."}},
-          ["game", "location"]),
+          ["game", "location"], idempotent=True),
     _tool("set_global_compat_tool", "Set the default Proton version for all Windows games without a per-game "
-          "override (Steam Play setting).", {"tool": {"type": "string"}}, ["tool"]),
+          "override (Steam Play setting).", {"tool": {"type": "string"}}, ["tool"], idempotent=True),
     _tool("add_shortcut", "Add a non-Steam game/app to the library, optionally running it with Proton "
           "(compat_tool, e.g. 'proton_experimental') for Windows .exe files.",
           {"name": {"type": "string"}, "exe": {"type": "string", "description": "Absolute path to the executable."},
@@ -241,7 +247,7 @@ TOOLS = [
            "compat_tool": {"type": "string"}}, ["name", "exe"]),
     _tool("remove_shortcut", "Remove a non-Steam shortcut from the library (files and prefix are kept). "
           "Requires confirm=true.", {"game": GAME, "confirm": {"type": "boolean"}}, ["game", "confirm"],
-          destructive=True),
+          destructive=True, idempotent=True),
     _tool("switch_mode", "Switch between Game Mode and Desktop Mode. Closes running apps. Requires confirm=true.",
           {"mode": {"enum": ["game", "desktop"]}, "confirm": {"type": "boolean"}}, ["mode", "confirm"],
           destructive=True),
@@ -249,15 +255,15 @@ TOOLS = [
           {"action": {"enum": ["suspend", "restart", "shutdown"]}, "confirm": {"type": "boolean"}},
           ["action", "confirm"], destructive=True),
     _tool("install_ge_proton", "Download and install GE-Proton (latest or a specific tag) with checksum "
-          "verification. Takes a few minutes.", {"tag": {"type": "string", "description": "e.g. GE-Proton10-20"}}),
+          "verification. Takes a few minutes.", {"tag": {"type": "string", "description": "e.g. GE-Proton10-20"}}, open_world=True),
     _tool("remove_proton", "Remove a custom Proton version from compatibilitytools.d (refuses if a game still "
-          "uses it).", {"name": {"type": "string"}}, ["name"], destructive=True),
+          "uses it).", {"name": {"type": "string"}}, ["name"], destructive=True, idempotent=True),
     _tool("delete_orphans", "Delete orphaned prefixes/shader caches (only appids that cleanup_report marks as "
           "'orphan' and that contain no installed programs). Requires confirm=true.",
           {"appids": {"type": "array", "items": {"type": "integer"}},
            "kinds": {"type": "array", "items": {"enum": ["compatdata", "shadercache"]},
                      "description": "Default: both."},
-           "confirm": {"type": "boolean"}}, ["appids", "confirm"], destructive=True),
+           "confirm": {"type": "boolean"}}, ["appids", "confirm"], destructive=True, idempotent=True),
 ]
 
 

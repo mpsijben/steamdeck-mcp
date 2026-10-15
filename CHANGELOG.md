@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Every tool now declares all four MCP tool hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
+  `openWorldHint`), so clients and directories can tell which tools only look, which can't be undone, which are
+  safe to retry and which reach the internet (GitHub, Steam's servers).
+
 ## 1.6.2 (2026-10-14)
 
 - Fix the test suite on machines without `xdotool` (CI): screen tests no longer depend on an X display.

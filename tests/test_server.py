@@ -213,6 +213,14 @@ class AccessLevelTests(unittest.TestCase):
         self.assertTrue(all(t["annotations"]["readOnlyHint"] for t in server._visible_tools()))
         self.assertTrue(call("set_tdp", watts=10)["isError"])
 
+    def test_every_tool_sets_all_four_hints(self):
+        hints = {"readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"}
+        server.LEVEL = "full"
+        for t in server._visible_tools():
+            with self.subTest(tool=t["name"]):
+                self.assertEqual(set(t["annotations"]), hints)
+                self.assertTrue(all(isinstance(v, bool) for v in t["annotations"].values()))
+
     def test_input_tools_only_at_full(self):
         inputs = {"press_key", "press_button", "move_stick", "type_text", "mouse_click", "mouse_move", "mouse_scroll"}
         self.assertFalse(inputs & self.names("standard"))
