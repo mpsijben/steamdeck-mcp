@@ -21,14 +21,15 @@ SCALING_MODES = {"auto": 1, "integer": 2, "fit": 3, "fill": 4, "stretch": 5}
 OVERLAY_LEVELS = {0: 0, 1: 4, 2: 1, 3: 2, 4: 3}  # menu level -> Steam's value
 TOOL_TYPE = 4
 
-# Waits for app details (compat tool, launch options, size) which Steam loads lazily.
+# Current app details (compat tool, launch options, size). Steam's appDetailsStore cache only updates while
+# something is registered for an app, so always register: the first callback carries the current state.
 _JS_HELPERS = r"""
 const __details = async (id) => {
-  let d = appDetailsStore.GetAppDetails(id);
-  if (d) return d;
   return await new Promise((resolve) => {
     let done = false, h = null;
-    const finish = (x) => { if (done) return; done = true; try { h && h.unregister(); } catch (e) {} resolve(x); };
+    // The callback can fire inside RegisterForAppDetails, before h is set, so unregister on the next tick.
+    const finish = (x) => { if (done) return; done = true;
+                            setTimeout(() => { try { h && h.unregister(); } catch (e) {} }, 0); resolve(x); };
     try { h = SteamClient.Apps.RegisterForAppDetails(id, finish); } catch (e) { finish(null); }
     setTimeout(() => finish(appDetailsStore.GetAppDetails(id) || null), 4000);
   });
@@ -120,10 +121,52 @@ return {
 """, ID=appid, SHORTCUT=SHORTCUT_TYPE)
 
 
+# Steam (Oct 2026) replaced SteamClient.Apps.GetAvailableCompatTools / Settings.GetGlobalCompatTools with a
+# "CompatManager" service on its internal message transport. Its message classes aren't exported, so this finds
+# the transport and request builder through the module that uses them and sends the protobuf bytes directly.
+_COMPAT_JS = r"""
+if (!window.__mcpCompat) {
+  const chunk = Object.keys(window).find(k => k.startsWith("webpackChunk"));
+  let req; window[chunk].push([[Symbol("steamdeck-mcp")], {}, r => { req = r; }]);
+  const id = Object.keys(req.m).find(i => req.m[i].toString().includes('"CompatManager.GetCompatTools#1"'));
+  if (!id) throw new Error("Steam's CompatManager service was not found");
+  const src = req.m[id].toString();
+  const tr = src.match(/\(0,(\w+)\.(\w+)\)\(\)\.GetDefaultTransport\(\)/);
+  const mk = src.match(/SendMsg\("CompatManager\.GetCompatTools#1",\(0,(\w+)\.(\w+)\)\(/);
+  const mod = (v) => req(src.match(new RegExp("\\b" + v + "=\\w\\((\\d+)\\)"))[1]);
+  window.__mcpCompat = {transport: () => mod(tr[1])[tr[2]]().GetDefaultTransport(), build: mod(mk[1])[mk[2]]};
+}
+const raw = (bytes) => ({serializeBinary: () => bytes, serializeBase64String: () => btoa(String.fromCharCode(...bytes)),
+                         getClassName: () => "steamdeck-mcp", toObject: () => ({})});
+class Req { static fromObject(x) { return raw(new Uint8Array(x)); } }
+class Resp { static deserializeBinaryFromReader(m, r) { const d = r.decoder_; m.b = d.bytes_.subarray(d.start_, d.end_); return m; }
+             static deserializeBinary(b) { const m = new Resp(); m.b = b; return m; } toObject() { return {}; } }
+const res = await window.__mcpCompat.transport().SendMsg("CompatManager.GetCompatTools#1",
+  window.__mcpCompat.build(Req, BYTES), Resp, {ePrivilege: 1, eClientExecutionSite: 2});
+if (!res.BSuccess()) throw new Error("CompatManager.GetCompatTools failed: " + res.GetEResult());
+const b = res.Body()?.b;
+return b ? btoa(String.fromCharCode(...b)) : "";
+"""
+
+
+def _compat_tools(appid=0):
+    """CMsgCompatManagerTool list for a game (appid 0 = the global default list), selected and default tool."""
+    raw = _js(_COMPAT_JS, BYTES=list(varint(1 << 3) + varint(appid)) if appid else [])
+    fields = decode_fields(base64.b64decode(raw or ""))
+    text = lambda f, n: f.get(n, [b""])[0].decode()  # noqa: E731
+    tools = []
+    for t in fields.get(1, []):
+        f = decode_fields(t)
+        tools.append({"name": text(f, 1), "display_name": text(f, 2), "legacy": bool(f.get(5, [0])[0]),
+                      "incompatible": bool(f.get(6, [0])[0])})
+    aliases = {text(f, 1): text(f, 3) for f in map(decode_fields, fields.get(2, []))}
+    return {"tools": tools, "aliases": aliases, "selected": text(fields, 3), "default": text(fields, 4)}
+
+
 def list_compat_tools(game=None):
     appid = resolve_app(game)[0] if game is not None else 0
-    tools = _js("return await SteamClient.Apps.GetAvailableCompatTools(ID);", ID=appid)
-    return [{"name": t["strToolName"], "display_name": t["strDisplayName"]} for t in tools]
+    found = _compat_tools(appid)
+    return [{"name": t["name"], "display_name": t["display_name"]} for t in found["tools"] if not t["incompatible"]]
 
 
 def set_compat_tool(game, tool):
@@ -242,8 +285,7 @@ def verify_game(game):
 # ---------- compat / shortcuts ----------
 
 def global_compat_tool():
-    tools = _js("return await SteamClient.Settings.GetGlobalCompatTools();")
-    return [{"name": t["strToolName"], "display_name": t["strDisplayName"]} for t in tools]
+    return list_compat_tools()
 
 
 def set_global_compat_tool(tool):

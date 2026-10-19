@@ -13,11 +13,11 @@ class ManagerUnavailable(RuntimeError):
     pass
 
 
-def _busctl(*args):
+def _busctl(*args, timeout=15):
     env = dict(os.environ)
     env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
     try:
-        r = subprocess.run(["busctl", "--user", *args], capture_output=True, text=True, timeout=15, env=env)
+        r = subprocess.run(["busctl", "--user", *args], capture_output=True, text=True, timeout=timeout, env=env)
     except FileNotFoundError as e:
         raise ManagerUnavailable("busctl not found") from e
     if r.returncode != 0:
@@ -87,6 +87,10 @@ def settings():
         "fan_control": _named(FAN_CONTROL, _try("FanControl1", "FanControlState")),
         "wifi_power_management": _named(WIFI_POWER, _try("WifiPowerManagement1", "WifiPowerManagementState")),
         "hdmi_cec": _named(HDMI_CEC, _try("HdmiCec1", "HdmiCecState")),
+        **{name: None if (v := _try(iface, prop)) is None else ("on" if v else "off")
+           for name, (iface, prop, sig, _) in OPTIONS.items() if sig == "b"},
+        "wifi_backend": _try("WifiBackend1", "WifiBackend"),
+        "wifi_debug_tracing": _named(ON_OFF, _try("WifiDebug1", "WifiDebugModeState")),
     }
     return {k: v for k, v in raw.items() if v is not None and v != [None, None]}
 
@@ -136,11 +140,32 @@ OPTIONS = {
 }
 
 
+ON_OFF = {0: "off", 1: "on"}
+# HDMI-CEC details (SteamOS 3.8+, HdmiCec2): booleans, so set as "on"/"off".
+OPTIONS.update({
+    "cec_remote_control": ("HdmiCec2", "EnableControl", "b", ON_OFF),
+    "cec_suspend_tv": ("HdmiCec2", "SuspendTv", "b", ON_OFF),
+    "cec_wake_tv": ("HdmiCec2", "WakeTv", "b", ON_OFF),
+    "cec_suspend_with_tv": ("HdmiCec2", "SuspendDevice", "b", ON_OFF),
+    "cec_wake_with_tv": ("HdmiCec2", "WakeDevice", "b", ON_OFF),
+})
+
+
+def _bool_value(raw):
+    # busctl prints booleans as true/false and wants them back that way
+    return {0: "false", 1: "true"}[raw]
+
+
 def set_option(option, value):
     if option not in OPTIONS:
         raise ValueError(f"Unknown option '{option}'. Options: {', '.join(OPTIONS)}")
     iface, prop, sig, allowed = OPTIONS[option]
     value = str(value).strip()
+    if sig == "b":
+        by_name = {"on": 1, "off": 0, "true": 1, "false": 0, "1": 1, "0": 0, "enabled": 1, "disabled": 0}
+        if value.lower() not in by_name:
+            raise ValueError(f"'{value}' is not valid for {option}. Choose on or off.")
+        return {option: "on" if set_(iface, prop, sig, _bool_value(by_name[value.lower()])) else "off"}
     if isinstance(allowed, dict):
         by_name = {v: k for k, v in allowed.items()}
         if value.lower() in by_name:
@@ -156,3 +181,49 @@ def set_option(option, value):
     if match is None:
         raise ValueError(f"'{value}' is not valid for {option}. Choose from: {', '.join(choices)}")
     return {option: set_(iface, prop, sig, match)}
+
+
+def call(interface, method, signature="", *args):
+    """Call a SteamOS Manager method; returns busctl's JSON 'data' list."""
+    extra = [signature, *map(str, args)] if signature else []
+    out = _busctl("call", "--json=short", SERVICE, PATH, IFACE + interface, method, *extra)
+    return json.loads(out)["data"] if out.strip() else []
+
+
+def trim_storage(wait=True):
+    """fstrim on the internal SSD and microSD, the way Steam's Storage settings do it (safe-to-trim checks included)."""
+    job = call("Storage1", "TrimDevices")[0]
+    if not wait:
+        return {"status": "started", "job": job}
+    try:
+        out = _busctl("call", "--json=short", "--timeout=600", SERVICE, job, IFACE + "Job1", "Wait", timeout=610)
+    except subprocess.TimeoutExpired:
+        return {"status": "still running", "job": job, "note": "Trimming continues in the background."}
+    code = json.loads(out)["data"][0]
+    if code != 0:
+        raise RuntimeError(f"Trim failed (exit code {code}).")
+    return {"status": "done", "note": "Unused blocks were trimmed on the internal SSD and microSD card."}
+
+
+def tv_make_active():
+    """HDMI-CEC: wake the TV and switch it to the Deck's input."""
+    call("HdmiCec2", "MakeActive")
+    return {"status": "requested", "note": "Only works when docked to a TV with HDMI-CEC on (see hdmi_cec)."}
+
+
+def wifi_debug(action):
+    """Wi-Fi driver diagnostics: a driver dump, or a trace (start, then reproduce the problem, then capture)."""
+    if action == "dump":
+        return {"file": call("WifiDebugDump1", "GenerateDebugDump")[0],
+                "note": "Temporary file; copy it somewhere permanent to keep it."}
+    if action == "start_trace":
+        call("WifiDebug1", "SetWifiDebugMode", "ua{sv}", 1, 0)
+        return {"tracing": True, "note": "Reproduce the Wi-Fi problem, then call again with capture_trace."}
+    if action == "capture_trace":
+        path = call("WifiDebug1", "CaptureDebugTraceOutput")[0]
+        call("WifiDebug1", "SetWifiDebugMode", "ua{sv}", 0, 0)
+        return {"file": path, "tracing": False, "note": "Temporary file; copy it somewhere permanent to keep it."}
+    if action == "stop_trace":
+        call("WifiDebug1", "SetWifiDebugMode", "ua{sv}", 0, 0)
+        return {"tracing": False}
+    raise ValueError("action must be dump, start_trace, capture_trace or stop_trace.")

@@ -1,10 +1,12 @@
 """Steam Deck MCP server: JSON-RPC 2.0 over stdio, stdlib only."""
 import json
 import os
+import re
 import sys
 import traceback
 
-from . import __version__, cdp, display, fps, gamepad, hardware, recording, maintenance, persist, screen, steam, steamos_manager, system
+from . import (__version__, cdp, display, flatpak, fps, gamepad, hardware, health, library, maintenance, osupdate,
+               persist, recording, screen, steam, steamos_manager, system)
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 
@@ -53,8 +55,10 @@ TOOLS = [
           "size, playtime and whether they are running. Requires Steam to be running.",
           {"details": {"type": "boolean", "description": "Fetch Proton/launch options/size (default true)."}},
           read_only=True),
-    _tool("game_info", "Details for one game: Proton version, launch options, install folder, size, "
-          "Steam Deck compatibility results.", {"game": GAME}, ["game"], read_only=True),
+    _tool("game_info", "Details for one game: Proton version, launch options, install folder, size, Steam Deck "
+          "compatibility results, and its properties: auto-update and background-download behaviour, language, "
+          "resolution override, Steam overlay, Steam Cloud, beta branches and DLC.", {"game": GAME}, ["game"],
+          read_only=True),
     _tool("running_games", "Games/apps that are currently running.", read_only=True),
     _tool("list_compat_tools", "Available Proton/compatibility tools (optionally for a specific game).",
           {"game": GAME}, read_only=True),
@@ -196,8 +200,9 @@ TOOLS = [
     _tool("set_power_option", "Change a SteamOS power setting. Options: cpu_governor (powersave/performance), "
           "cpu_scheduler (e.g. none/lavd), cpu_boost (number), gpu_performance_level (auto/low/high/manual/"
           "profile_peak), gpu_power_profile, fan_control (os/bios), wifi_power_management (enabled/disabled), "
-          "hdmi_cec (number or disabled/control only/control and wake). Available options depend on the SteamOS "
-          "version. "
+          "hdmi_cec (number or disabled/control only/control and wake), and on/off for cec_remote_control, "
+          "cec_suspend_tv, cec_wake_tv, cec_suspend_with_tv, cec_wake_with_tv (TV and Deck following each other's "
+          "sleep/wake over HDMI-CEC). Available options depend on the SteamOS version. "
           "See power_settings for the values this Deck supports.",
           {"option": {"enum": list(steamos_manager.OPTIONS)}, "value": {"type": "string"}, "persist": {"type": "boolean", "description": "Keep this setting after a reboot (re-applied automatically)."}},
           ["option", "value"], idempotent=True),
@@ -264,6 +269,93 @@ TOOLS = [
            "kinds": {"type": "array", "items": {"enum": ["compatdata", "shadercache"]},
                      "description": "Default: both."},
            "confirm": {"type": "boolean"}}, ["appids", "confirm"], destructive=True, idempotent=True),
+    # --- self-check ---
+    _tool("api_health", "Self-check: are the undocumented Steam client APIs, SteamOS Manager interfaces, the SteamOS "
+          "updater and the commands this server uses still there? Run it after a Steam or SteamOS update, or when "
+          "a tool fails with 'is not a function'. Lists which functions are affected.", read_only=True),
+    # --- library extras ---
+    _tool("achievements", "Your achievements for a game (installed or not): unlocked count, and the list "
+          "(show=locked lists the ones you still miss, most common first).",
+          {"game": GAME, "show": {"enum": ["all", "locked", "unlocked"], "description": "Default all."}},
+          ["game"], read_only=True, open_world=True),
+    _tool("cloud_status", "Steam Cloud save status: for one game (status, space used, pending operations), or "
+          "without 'game' the installed games with sync problems (conflict, failed, out of sync, disabled).",
+          {"game": GAME}, read_only=True),
+    _tool("cloud_sync", "Fix Steam Cloud sync for a game: retry, or settle a save conflict with keep_local / "
+          "keep_cloud (the other copy is overwritten, needs confirm=true).",
+          {"game": GAME, "action": {"enum": ["retry", "keep_local", "keep_cloud"]}, "confirm": {"type": "boolean"}},
+          ["game", "action"], destructive=True, open_world=True),
+    _tool("download_queue", "Reorder Steam's download queue: move a game to the top/bottom, up/down, to a position "
+          "(1 = first), or remove it from the download list.",
+          {"game": GAME, "action": {"enum": ["top", "bottom", "up", "down", "position", "remove"]},
+           "position": {"type": "integer"}}, ["game", "action"]),
+    _tool("set_game_option", "Change a game's Steam properties. auto_update: default, on_launch, always, "
+          "high_priority. background_downloads (while playing something else): default, allow, never. language: "
+          "one of the game's languages (see game_info). resolution: default, native or e.g. 1920x1080 (for external "
+          "displays). steam_overlay / steam_cloud: on or off.",
+          {"game": GAME, "option": {"enum": list(library.GAME_OPTIONS)}, "value": {"type": "string"}},
+          ["game", "option", "value"], idempotent=True),
+    _tool("set_game_branch", "Switch a game to a beta branch (names in game_info) or back to 'public'; private "
+          "branches with a password. Steam downloads the branch as an update.",
+          {"game": GAME, "branch": {"type": "string"}, "password": {"type": "string"}}, ["game"], idempotent=True, open_world=True),
+    _tool("set_dlc", "Enable or disable an installed game's DLC (by name or appid, see game_info).",
+          {"game": GAME, "dlc": {"type": ["string", "integer"]}, "enabled": {"type": "boolean"}},
+          ["game", "dlc", "enabled"], idempotent=True, open_world=True),
+    _tool("workshop_items", "Steam Workshop items (mods) you subscribed to for a game.", {"game": GAME}, ["game"],
+          read_only=True),
+    _tool("set_workshop_item", "Enable or disable a subscribed Workshop item for a game on this Deck only.",
+          {"game": GAME, "item": {"type": "string", "description": "publishedfileid"},
+           "enabled": {"type": "boolean"}}, ["game", "item", "enabled"], idempotent=True),
+    _tool("set_artwork", "Set custom library artwork for a game or non-Steam shortcut from a local PNG/JPEG or an "
+          "https URL (e.g. from SteamGridDB), or clear=true to go back to the default. kind: grid (600x900 cover), "
+          "wide (920x430), hero (3840x1240 banner), logo (transparent PNG).",
+          {"game": GAME, "kind": {"enum": list(library.ARTWORK)}, "source": {"type": "string"},
+           "clear": {"type": "boolean"}}, ["game", "kind"], idempotent=True, open_world=True),
+    _tool("screenshots", "Steam screenshots on this Deck: count per game and the latest ones (optionally for one "
+          "game), with the game_id/handle to view or delete them.",
+          {"game": GAME, "limit": {"type": "integer", "description": "Default 20."}}, read_only=True),
+    _tool("view_screenshot", "Show a Steam screenshot (from screenshots) as an image.",
+          {"game_id": {"type": "string"}, "handle": {"type": "integer"}}, ["game_id", "handle"], read_only=True),
+    _tool("delete_screenshots", "Delete Steam screenshots from this Deck (uploaded copies stay). Requires confirm=true.",
+          {"items": {"type": "array", "items": {"type": "object", "properties": {
+              "game_id": {"type": "string"}, "handle": {"type": "integer"}}}}, "confirm": {"type": "boolean"}},
+          ["items"], destructive=True, idempotent=True),
+    _tool("game_notes", "Steam's per-game notes (shown in the overlay while playing, synced via Steam Cloud): list "
+          "them, add one (e.g. tips for the player), update or delete by id.",
+          {"game": GAME, "action": {"enum": ["list", "add", "update", "delete"], "description": "Default list."},
+           "title": {"type": "string"}, "text": {"type": "string"}, "note_id": {"type": "string"}}, ["game"], open_world=True),
+    _tool("set_steam_online", "Put Steam in offline mode or back online.", {"online": {"type": "boolean"}},
+          ["online"], idempotent=True, open_world=True),
+    _tool("music_control", "Control Steam's music player (soundtracks): play_pause, next, previous, mute, "
+          "volume_up, volume_down.", {"action": {"enum": list(library.MUSIC)}}, ["action"]),
+    _tool("system_settings", "Steam's system settings: time zone, language and the Deck's network name (hostname).",
+          read_only=True),
+    _tool("set_system_setting", "Change the time zone (e.g. Europe/Amsterdam), Steam's language (e.g. dutch, "
+          "english) or the Deck's hostname.",
+          {"setting": {"enum": ["timezone", "language", "hostname"]}, "value": {"type": "string"}},
+          ["setting", "value"], idempotent=True),
+    # --- apps & system ---
+    _tool("flatpak_apps", "Desktop apps installed with Flatpak (Discover): Heroic, Lutris, emulators, browsers ... "
+          "and whether they have a Steam shortcut; with 'query', search Flathub instead.",
+          {"query": {"type": "string"}}, read_only=True, open_world=True),
+    _tool("install_flatpak", "Install an app from Flathub by app id (find it with flatpak_apps query) and add it to "
+          "Steam so it can be started in Game Mode. E.g. com.heroicgameslauncher.hgl for Epic/GOG/Amazon games.",
+          {"app_id": {"type": "string"}, "add_to_steam": {"type": "boolean", "description": "Default true."}},
+          ["app_id"], idempotent=True, open_world=True),
+    _tool("uninstall_flatpak", "Uninstall a Flatpak app. Its data (~/.var/app) is kept unless delete_data=true. "
+          "Requires confirm=true.",
+          {"app_id": {"type": "string"}, "delete_data": {"type": "boolean"}, "confirm": {"type": "boolean"}},
+          ["app_id"], destructive=True, idempotent=True),
+    _tool("os_update", "SteamOS updates: status (version, branch, progress), check, install (needs confirm=true; "
+          "finishes after a restart), cancel, or switch_branch (stable, beta, preview ...; needs confirm=true).",
+          {"action": {"enum": ["status", "check", "install", "cancel", "switch_branch"]},
+           "branch": {"type": "string"}, "confirm": {"type": "boolean"}}, ["action"], destructive=True, open_world=True),
+    _tool("trim_storage", "Run TRIM on the internal SSD and microSD card (what Steam's Storage settings do), which "
+          "keeps them fast. Takes up to a minute.", idempotent=True),
+    _tool("tv_switch_input", "HDMI-CEC: wake the connected TV and switch it to the Deck's input (when docked).", idempotent=True),
+    _tool("wifi_diagnostics", "Wi-Fi driver diagnostics for connection problems: dump (driver state to a file), or "
+          "start_trace, reproduce the problem, then capture_trace (or stop_trace).",
+          {"action": {"enum": ["dump", "start_trace", "capture_trace", "stop_trace"]}}, ["action"]),
 ]
 
 
@@ -356,6 +448,8 @@ def _set_tdp(args):
 
 
 def _measure_fps(seconds, game, wait_seconds):
+    if not hardware.is_game_mode():
+        raise RuntimeError("Only works in Game Mode.")
     name = steam._perf_target(game, wait_seconds) if game is not None else None
     # mangoapp only handles frames while the overlay is shown, so show the FPS counter during the measurement.
     overlay_was_off = steam._perf_view(steam._perf_state())["overlay_level"] == 0
@@ -381,12 +475,38 @@ def _remove_proton(name):
     return maintenance.remove_proton(name)
 
 
+def _game_info(game):
+    info = steam.game_info(game)
+    try:
+        info.update(library.game_properties(info["appid"], info["type"] == "non-steam"))
+    except RuntimeError as e:  # the basic details are still useful
+        info["properties_error"] = str(e)
+    return info
+
+
+def _os_update(a):
+    action = a["action"]
+    if action == "status":
+        return osupdate.status()
+    if action == "check":
+        return osupdate.check()
+    if action == "install":
+        return osupdate.install(a.get("confirm", False))
+    if action == "cancel":
+        return osupdate.cancel()
+    if action == "switch_branch":
+        if not a.get("branch"):
+            raise ValueError("Pass branch (see os_update action=status for the known branches).")
+        return osupdate.switch_branch(a["branch"], a.get("confirm", False))
+    raise ValueError("action must be status, check, install, cancel or switch_branch.")
+
+
 HANDLERS = {
     "steam_integration_status": lambda a: cdp.integration_status(),
     "enable_steam_integration": lambda a: cdp.enable_integration(),
     "system_status": lambda a: hardware.system_status(maintenance.libraries()),
     "list_games": lambda a: steam.list_games(a.get("details", True)),
-    "game_info": lambda a: steam.game_info(a["game"]),
+    "game_info": lambda a: _game_info(a["game"]),
     "running_games": lambda a: steam.running_games(),
     "list_compat_tools": lambda a: steam.list_compat_tools(a.get("game")),
     "list_proton_installs": lambda a: maintenance.list_proton(),
@@ -463,6 +583,33 @@ HANDLERS = {
     "remove_proton": lambda a: _remove_proton(a["name"]),
     "delete_orphans": lambda a: maintenance.delete_orphans(
         a["appids"], tuple(a.get("kinds") or ("compatdata", "shadercache")), a.get("confirm", False)),
+    "api_health": lambda a: health.check(),
+    "achievements": lambda a: library.achievements(a["game"], a.get("show") or "all"),
+    "cloud_status": lambda a: library.cloud_status(a.get("game")),
+    "cloud_sync": lambda a: library.cloud_sync(a["game"], a["action"], a.get("confirm", False)),
+    "download_queue": lambda a: library.download_queue(a["game"], a["action"], a.get("position")),
+    "set_game_option": lambda a: library.set_game_option(a["game"], a["option"], a["value"]),
+    "set_game_branch": lambda a: library.set_game_branch(a["game"], a.get("branch"), a.get("password")),
+    "set_dlc": lambda a: library.set_dlc(a["game"], a["dlc"], a["enabled"]),
+    "workshop_items": lambda a: library.workshop_items(a["game"]),
+    "set_workshop_item": lambda a: library.set_workshop_item(a["game"], a["item"], a["enabled"]),
+    "set_artwork": lambda a: library.set_artwork(a["game"], a["kind"], a.get("source"), a.get("clear", False)),
+    "screenshots": lambda a: library.screenshots(a.get("game"), a.get("limit") or 20),
+    "view_screenshot": lambda a: library.view_screenshot(a["game_id"], a["handle"]),
+    "delete_screenshots": lambda a: library.delete_screenshots(a["items"], a.get("confirm", False)),
+    "game_notes": lambda a: library.game_notes(a["game"], a.get("action") or "list", a.get("title"), a.get("text"),
+                                               a.get("note_id")),
+    "set_steam_online": lambda a: library.set_steam_online(a["online"]),
+    "music_control": lambda a: library.music(a["action"]),
+    "system_settings": lambda a: library.system_settings(),
+    "set_system_setting": lambda a: library.set_system_setting(a["setting"], a["value"]),
+    "flatpak_apps": lambda a: flatpak.apps(a.get("query")),
+    "install_flatpak": lambda a: flatpak.install(a["app_id"], a.get("add_to_steam", True)),
+    "uninstall_flatpak": lambda a: flatpak.uninstall(a["app_id"], a.get("confirm", False), a.get("delete_data", False)),
+    "os_update": lambda a: _os_update(a),
+    "trim_storage": lambda a: steamos_manager.trim_storage(),
+    "tv_switch_input": lambda a: steamos_manager.tv_make_active(),
+    "wifi_diagnostics": lambda a: steamos_manager.wifi_debug(a["action"]),
 }
 
 
@@ -519,7 +666,11 @@ def _call_tool(params):
     except Exception as e:  # report to the model instead of crashing the server
         if not isinstance(e, (ValueError, RuntimeError)):  # CDPError is a RuntimeError
             print(traceback.format_exc(), file=sys.stderr)
-        return {"content": [{"type": "text", "text": f"{type(e).__name__}: {e}"}], "isError": True}
+        text = f"{type(e).__name__}: {e}"
+        if isinstance(e, cdp.CDPError) and re.search(r"is not a function|Cannot read properties of undefined", str(e)):
+            text += ("\nSteam's internal API seems to have changed after a Steam update. Run api_health to see "
+                     "which tools are affected.")
+        return {"content": [{"type": "text", "text": text}], "isError": True}
 
 
 def _handle(msg):
@@ -532,7 +683,9 @@ def _handle(msg):
             "serverInfo": {"name": "steamdeck-mcp", "version": __version__},
             "instructions": "Controls this Steam Deck: system status, games, per-game and global Proton, "
                             "downloads, TDP/GPU/CPU/charge limit, audio, Wi-Fi, Bluetooth, power, GE-Proton installs, "
-                            "cleanup and game logs, plus screenshots (and keyboard/mouse input at full access). "
+                            "cleanup and game logs, achievements, Steam Cloud, game properties, artwork, screenshots, "
+                            "game notes, Flatpak apps and SteamOS updates (and keyboard/mouse input at full "
+                            "access). If a tool fails after a Steam update, run api_health. "
                             "Game/Proton tools need Steam running with the integration enabled (see "
                             f"steam_integration_status). Access level: {LEVEL}. Reply to the user in their own "
                             "language.",

@@ -15,7 +15,8 @@ sys.path.insert(0, ROOT)
 from steamdeck_mcp.server import TOOLS  # noqa: E402
 
 # Tools that need arguments get a harmless default; tools that are slow or hit the network are skipped.
-DEFAULT_ARGS = {"game_info": None, "find_game_logs": None, "read_log": None, "measure_fps": {"seconds": 5}}
+DEFAULT_ARGS = {"game_info": None, "find_game_logs": None, "read_log": None, "measure_fps": {"seconds": 5},
+                "achievements": None, "workshop_items": None, "view_screenshot": None}
 
 
 def run(calls, timeout=300):

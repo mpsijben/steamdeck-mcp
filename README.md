@@ -159,7 +159,7 @@ whatever is in front, so only choose `--full` if you're happy for your assistant
 
 ## Tools
 
-71 tools. Games can be referred to by appid or by (part of) their name, e.g. `"hades"`.
+97 tools. Games can be referred to by appid or by (part of) their name, e.g. `"hades"`.
 ✏️ = changes something · ⚠️ = destructive, needs `confirm=true` or is clearly marked · 🖐️ = keyboard/mouse input,
 only with `--full`.
 
@@ -178,7 +178,7 @@ only with `--full`.
 
 | Tool | What it does |
 |---|---|
-| `list_games` · `game_info` · `running_games` | Installed Steam games and non-Steam shortcuts with Proton version, launch options, size, playtime, Deck compatibility |
+| `list_games` · `game_info` · `running_games` | Installed Steam games and non-Steam shortcuts with Proton version, launch options, size, playtime, Deck compatibility; `game_info` also shows update/download behaviour, language, resolution, overlay, Steam Cloud, beta branches and DLC |
 | `search_owned_games` | Everything you own, installed or not |
 | `install_game` ✏️ | Install on internal storage or microSD; `dry_run` shows the size first. License agreements are only accepted when you explicitly ask (`accept_eula`) |
 | `uninstall_game` ⚠️ | Uninstall; warns when saves are not in Steam Cloud |
@@ -187,6 +187,20 @@ only with `--full`.
 | `launch_game` ✏️ · `stop_game` ⚠️ | Start or force-quit a game |
 | `update_game` ✏️ · `verify_game` ✏️ · `set_downloads_paused` ✏️ | Updates, file verification, pause/resume downloads |
 | `add_shortcut` ✏️ · `remove_shortcut` ⚠️ | Add a non-Steam game (optionally with Proton) or remove one (files are kept) |
+| `download_queue` ✏️ | Move a game to the top/bottom, up/down or a position in the download queue, or remove it |
+| `set_game_option` ✏️ | Per game: auto-update behaviour, background downloads, language, resolution override, Steam overlay, Steam Cloud |
+| `set_game_branch` ✏️ · `set_dlc` ✏️ | Switch to a beta branch (also password-protected ones) or back; enable/disable DLC |
+| `workshop_items` · `set_workshop_item` ✏️ | Subscribed Workshop mods, enable/disable them on this Deck |
+| `set_artwork` ✏️ | Custom cover, wide, hero or logo artwork from a file or https URL (e.g. SteamGridDB), or back to default |
+
+### Achievements, saves, screenshots & notes
+
+| Tool | What it does |
+|---|---|
+| `achievements` | Unlocked/total and the list; `show=locked` lists what you still miss |
+| `cloud_status` · `cloud_sync` ✏️ | Steam Cloud status per game or all games with sync problems; retry a sync or settle a conflict (`keep_local`/`keep_cloud` ⚠️) |
+| `screenshots` · `view_screenshot` · `delete_screenshots` ⚠️ | Steam screenshots per game, look at one, delete them |
+| `game_notes` ✏️ | Steam's per-game notes (shown in the overlay while playing): list, add, update, delete |
 
 ### Proton & troubleshooting
 
@@ -252,6 +266,13 @@ running, a restart of Steam may be needed before recording starts.
 | `switch_mode` ⚠️ | Switch between Game Mode and Desktop Mode |
 | `power_action` ⚠️ | Suspend, restart or shut down |
 | `check_os_updates` | SteamOS/Steam update check and branch |
+| `os_update` ✏️ | SteamOS updates through the system's update service: status, check, install (⚠️ confirm, finishes after a restart), cancel, switch branch (⚠️ confirm) |
+| `system_settings` · `set_system_setting` ✏️ | Time zone, Steam language, the Deck's network name |
+| `set_steam_online` ✏️ · `music_control` ✏️ | Steam offline mode on/off; Steam's music player |
+| `flatpak_apps` · `install_flatpak` ✏️ · `uninstall_flatpak` ⚠️ | Desktop apps from Flathub (Heroic, Lutris, emulators ...), installed and added to Steam in one go |
+| `tv_switch_input` ✏️ | Docked: wake the TV and switch it to the Deck (HDMI-CEC) |
+| `wifi_diagnostics` ✏️ | Wi-Fi driver dump or trace for connection problems |
+| `api_health` | Self-check after Steam/SteamOS updates: which Steam APIs, SteamOS services and commands are missing, and which functions use them |
 | `enable_steam_integration` ✏️ | One-time setup (creates Steam's debugging flag file) |
 
 ### Maintenance
@@ -260,6 +281,7 @@ running, a restart of Steam may be needed before recording starts.
 |---|---|
 | `cleanup_report` | Proton prefixes and shader caches of games that are gone, with sizes (deletes nothing) |
 | `delete_orphans` ⚠️ | Delete what `cleanup_report` marked as orphaned |
+| `trim_storage` ✏️ | TRIM the internal SSD and microSD card, as Steam's Storage settings do |
 
 ## Optimizing a game
 
@@ -343,7 +365,10 @@ uses the same port. Only enable it if you're comfortable with that.
 
 | Feature | Interface |
 |---|---|
-| TDP, GPU, charge limit, CPU, fan, Wi-Fi power saving, HDMI-CEC | **SteamOS Manager** D-Bus service (`com.steampowered.SteamOSManager1`), the API Steam's own Quick Access menu uses |
+| TDP, GPU, charge limit, CPU, fan, Wi-Fi power saving, HDMI-CEC, TRIM, Wi-Fi diagnostics | **SteamOS Manager** D-Bus service (`com.steampowered.SteamOSManager1`), the API Steam's own Quick Access menu uses |
+| SteamOS updates | **atomupd** D-Bus service (`com.steampowered.Atomupd1`), which Steam's System settings use |
+| Proton version lists | Steam's internal `CompatManager` service (Steam replaced the older `SteamClient` calls in October 2026) |
+| Flatpak apps | `flatpak` (user installation for new apps) plus a Steam shortcut |
 | Games, installs, Proton, launch options, downloads, shortcuts, power, airplane mode, brightness | Steam's internal `SteamClient` JavaScript API, via its local debugging port |
 | TDP/GPU on older SteamOS | `steamos-priv-write` (polkit-allowed helper, no password) |
 | Audio, Wi-Fi, Bluetooth, processes, Game/Desktop switch | `pactl`, `nmcli`, `bluetoothctl`, `ps`, `steamos-session-select` |
@@ -358,7 +383,10 @@ uses the same port. Only enable it if you're comfortable with that.
 | GE-Proton, cleanup, logs | Files under `~/.local/share/Steam` and your Steam libraries |
 
 **A note on stability:** `SteamClient` is Steam's internal, undocumented API (the same one Decky Loader plugins
-use). A Steam update can change it and break a game/Proton tool until it's fixed here. SteamOS Manager is a
+use). A Steam update can change it and break a game/Proton tool until it's fixed here. Run `api_health` after an
+update: it checks every Steam API, SteamOS Manager interface and command the server uses (the list is read from the
+code itself) and names the functions that are affected; a tool that fails with "is not a function" also points
+there. SteamOS Manager is a
 versioned interface but also evolves (SteamOS 3.8 removed one interface and added CPU boost/scheduler); the server
 adapts to whatever your SteamOS version offers. Hardware, file and system tools don't depend on Steam at all.
 

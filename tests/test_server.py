@@ -10,7 +10,8 @@ sys.path.insert(0, ROOT)
 
 import tempfile  # noqa: E402
 
-from steamdeck_mcp import cdp, display, fps, gamepad, maintenance, recording, screen, persist, server, steamos_manager  # noqa: E402
+from steamdeck_mcp import (cdp, display, flatpak, fps, gamepad, health, library, maintenance, persist,  # noqa: E402
+                           recording, screen, server, steam, steamos_manager)
 
 
 def call(name, **args):
@@ -375,6 +376,121 @@ class FpsTests(unittest.TestCase):
     def test_seconds_validated(self):
         with self.assertRaises((ValueError, RuntimeError)):  # RuntimeError outside Game Mode
             fps.measure(1)
+
+
+class HealthTests(unittest.TestCase):
+    def test_used_apis_come_from_the_source(self):
+        used = health.used_apis()
+        self.assertIn("steam.launch_game", used["SteamClient.Apps.RunGame"])
+        self.assertIn("SteamClient.Apps.GetMyAchievementsForApp", used)
+        self.assertIn("appStore.allApps", used)
+        self.assertFalse([k for k in used if k.startswith("SteamClient.Apps.GetAvailableCompatTools")],
+                         "comment lines must not count as API use")
+
+    def test_missing_api_is_reported_with_its_users(self):
+        orig_eval, orig_mgr, orig_os = cdp.evaluate, health._manager_interfaces, health.osupdate._get
+        cdp.evaluate = lambda expr, **kw: ["SteamClient.Apps.RunGame", "settingsStore.m_ClientSettings"]
+        health._manager_interfaces = lambda: (["TdpLimit1"], [])
+        health.osupdate._get = lambda prop: "3.8"
+        try:
+            r = health.check()
+        finally:
+            cdp.evaluate, health._manager_interfaces, health.osupdate._get = orig_eval, orig_mgr, orig_os
+        self.assertFalse(r["ok"])
+        self.assertEqual([m["api"] for m in r["steam_client"]["missing"]], ["SteamClient.Apps.RunGame"])
+        self.assertIn("settingsStore.m_ClientSettings", r["steam_client"]["not_checked_now"]["apis"])
+
+    def test_changed_steam_api_error_suggests_api_health(self):
+        orig = steam.resolve_app
+        def boom(game):
+            raise cdp.CDPError("TypeError: SteamClient.Apps.Foo is not a function")
+        steam.resolve_app = boom
+        try:
+            r = call("launch_game", game="x")
+        finally:
+            steam.resolve_app = orig
+        self.assertTrue(r["isError"])
+        self.assertIn("api_health", r["content"][0]["text"])
+
+
+class LibraryTests(unittest.TestCase):
+    def test_compat_tools_decoded_from_protobuf(self):
+        import base64
+        def msg(*fields):
+            out = b""
+            for n, v in fields:
+                if isinstance(v, str):
+                    v = v.encode()
+                if isinstance(v, bytes):
+                    out += cdp.varint(n << 3 | 2) + cdp.varint(len(v)) + v
+                else:
+                    out += cdp.varint(n << 3) + cdp.varint(v)
+            return out
+        body = msg((1, msg((1, "proton_11"), (2, "Proton 11.0-2"))),
+                   (1, msg((1, "scout_ldlp"), (2, "Legacy"), (6, 1))),
+                   (2, msg((1, "proton-stable"), (3, "proton_11"))), (3, "proton_11"), (4, "proton_10"))
+        sent = []
+        orig = steam._js
+        steam._js = lambda b, **kw: sent.append(kw) or base64.b64encode(body).decode()
+        try:
+            r = steam._compat_tools(1145360)
+        finally:
+            steam._js = orig
+        self.assertEqual(sent[0]["BYTES"], list(cdp.varint(8) + cdp.varint(1145360)))
+        self.assertEqual([t["name"] for t in r["tools"]], ["proton_11", "scout_ldlp"])
+        self.assertTrue(r["tools"][1]["incompatible"])
+        self.assertEqual((r["selected"], r["default"], r["aliases"]), ("proton_11", "proton_10",
+                                                                        {"proton-stable": "proton_11"}))
+
+    def test_note_text_roundtrip(self):
+        bb = library._text_to_bbcode("Line 1\nBoss [phase 2] tips")
+        self.assertEqual(bb, "[p]Line 1[/p][p]Boss [phase 2] tips[/p]")
+        self.assertEqual(library._bbcode_to_text(bb + "[b]x[/b]"), "Line 1\nBoss [phase 2] tips\nx")
+
+    def test_destructive_library_actions_need_confirm(self):
+        self.assertTrue(call("delete_screenshots", items=[{"game_id": "7", "handle": 1}])["isError"])
+        with self.assertRaises(ValueError):
+            library.delete_screenshots([])
+
+    def test_settings_validated_before_steam_is_called(self):
+        orig = steam._js
+        steam._js = lambda *a, **kw: self.fail("Steam should not be called")
+        try:
+            with self.assertRaises(ValueError):
+                library.set_system_setting("hostname", "bad name;rm")
+            with self.assertRaises(ValueError):
+                library.set_system_setting("wallpaper", "x")
+            with self.assertRaises(ValueError):
+                library.music("explode")
+        finally:
+            steam._js = orig
+
+    def test_artwork_only_accepts_images(self):
+        with tempfile.NamedTemporaryFile(suffix=".png") as f:
+            f.write(b"not an image")
+            f.flush()
+            with self.assertRaises(ValueError):
+                library._image(f.name)
+        with self.assertRaises(ValueError):
+            library._image("http://example.com/x.png")  # https only
+
+    def test_flatpak_ids_validated(self):
+        for bad in ("rm -rf", "--user", "a.b", "com.example.App; reboot"):
+            with self.assertRaises(ValueError):
+                flatpak._check_id(bad)
+        flatpak._check_id("com.heroicgameslauncher.hgl")
+
+    def test_bool_power_option_validated(self):
+        sent = []
+        orig = steamos_manager.set_
+        steamos_manager.set_ = lambda iface, prop, sig, value: sent.append((prop, sig, value)) or True
+        try:
+            self.assertEqual(steamos_manager.set_option("cec_wake_tv", "on"), {"cec_wake_tv": "on"})
+            with self.assertRaises(ValueError):
+                steamos_manager.set_option("cec_wake_tv", "maybe")
+        finally:
+            steamos_manager.set_ = orig
+        self.assertEqual(sent, [("WakeTv", "b", "true")])
 
 
 if __name__ == "__main__":

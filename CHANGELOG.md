@@ -1,10 +1,32 @@
 # Changelog
 
-## Unreleased
+## 1.7.0 (2026-10-19)
 
+26 new tools (97 in total), each checked on a Steam Deck (SteamOS 3.8.28, Steam of 13 Oct 2026).
+
+- **New:** `api_health` self-check. It reads every Steam client API, SteamOS Manager interface and command from the
+  server's own code and reports what is missing after an update, with the functions that use it. A tool that fails
+  with "is not a function" now suggests running it.
+- **Fix:** Steam's October 2026 update removed `SteamClient.Apps.GetAvailableCompatTools` and
+  `SteamClient.Settings.GetGlobalCompatTools`, which broke `list_compat_tools`, `list_global_compat_tools`,
+  `set_compat_tool` and `set_global_compat_tool`. They now use Steam's new `CompatManager` service.
+- **Fix:** game details (Proton version, launch options, properties) could show stale values right after a change,
+  because Steam's cache only updates while something listens; they are now always read fresh.
+- **Fix:** `measure_fps` outside Game Mode now says so instead of failing with a JavaScript error.
+- **New (games):** `download_queue`, `set_game_option` (auto-update, background downloads, language, resolution,
+  overlay, Steam Cloud), `set_game_branch`, `set_dlc`, `workshop_items`, `set_workshop_item`, `set_artwork`;
+  `game_info` shows these properties.
+- **New (saves & media):** `achievements`, `cloud_status`, `cloud_sync`, `screenshots`, `view_screenshot`,
+  `delete_screenshots`, `game_notes`.
+- **New (system):** `os_update` (SteamOS updates and branches through atomupd), `system_settings`,
+  `set_system_setting`, `set_steam_online`, `music_control`, `flatpak_apps`, `install_flatpak`,
+  `uninstall_flatpak`, `trim_storage`, `tv_switch_input`, `wifi_diagnostics`; `set_power_option` gained the
+  HDMI-CEC sleep/wake options.
 - Every tool now declares all four MCP tool hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
   `openWorldHint`), so clients and directories can tell which tools only look, which can't be undone, which are
-  safe to retry and which reach the internet (GitHub, Steam's servers).
+  safe to retry and which reach the internet (GitHub, Steam's servers, Flathub).
+- Not included on purpose: formatting storage, factory reset, BIOS/dock firmware updates, purchases and account
+  removal.
 
 ## 1.6.2 (2026-10-14)
 
